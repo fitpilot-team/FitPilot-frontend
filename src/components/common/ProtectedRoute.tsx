@@ -1,33 +1,56 @@
-import { ReactNode, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
+import { ReactNode } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/newAuthStore';
+import { useProfessional } from '@/contexts/ProfessionalContext';
 
 interface ProtectedRouteProps {
   children: ReactNode;
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, token } = useAuthStore();
+  const { isAuthenticated, user, authChecked } = useAuthStore();
+  const { userData, isLoading } = useProfessional();
+  const location = useLocation();
+  const activeUser = user ?? userData;
+  const onboardingStatus = activeUser?.onboarding_status;
+  const needsOnboarding = Boolean(
+    activeUser && onboardingStatus && onboardingStatus.toLowerCase() !== 'completed'
+  );
+  const isOnboardingPath = location.pathname.startsWith('/onboarding');
 
-  useEffect(() => {
-    // If authenticated but no user loaded, load user
-    // if (isAuthenticated && !token) {
-    //   loadUser();
-    // }
-  }, [isAuthenticated, token]);
-
-  // Show loading while checking auth
-  // if (isLoading) {
-  //   return (
-  //     <div className="min-h-screen flex items-center justify-center">
-  //       <LoadingSpinner size="lg" />
-  //     </div>
-  //   );
-  // }
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+          <span className="text-sm font-medium text-gray-600">Cargando sesión...</span>
+        </div>
+      </div>
+    );
+  }
 
   // Redirect to login if not authenticated
   if (!isAuthenticated) {
     return <Navigate to="/auth/login" replace />;
+  }
+
+  if (isAuthenticated && !activeUser && isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+          <span className="text-sm font-medium text-gray-600">Cargando sesión...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (needsOnboarding && !isOnboardingPath) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  if (!needsOnboarding && isOnboardingPath) {
+    return <Navigate to="/" replace />;
   }
 
   // Check role if required

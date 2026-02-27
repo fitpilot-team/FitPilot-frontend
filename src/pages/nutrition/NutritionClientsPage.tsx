@@ -206,6 +206,7 @@ export function NutritionClientsPage() {
                             clientName={`${client.name}`}
                             clientLastName={client.lastname ?? ''}
                             nextAppointment={client.nextAppointment || null}
+                            activationUrl={client.activation_url ?? null}
                             serviceType={client.serviceType || ''}
                             services={client.services}
                             onAction={() => navigate(`/nutrition/clients/${client.id}/medical-history`)}

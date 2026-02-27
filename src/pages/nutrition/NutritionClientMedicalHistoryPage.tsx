@@ -3,7 +3,7 @@ import { useClientHistory } from '@/features/client-history/queries';
 import { ClientMetricHistory } from '@/features/client-history/types';
 import { 
     Ruler, Scale, Activity, HeartPulse, Droplet, 
-    AlertCircle, ArrowLeft, ExternalLink, TrendingDown, 
+    AlertCircle, ArrowLeft, TrendingDown, 
     AlertTriangle, Home, Moon, UtensilsCrossed, Flame, 
     Target, Zap 
 } from 'lucide-react';
@@ -268,13 +268,6 @@ export function NutritionClientMedicalHistoryPage() {
                     <span className="text-sm font-medium">Volver a Clientes</span>
                 </button>
 
-                 <button
-                    onClick={() => navigate(`/nutrition/clients/${clientId}`)}
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-nutrition-600 transition-colors shadow-sm"
-                >
-                    <ExternalLink className="w-4 h-4" />
-                   Ver Perfil Completo
-                </button>
             </div>
 
             {/* Main Dashboard Header */}

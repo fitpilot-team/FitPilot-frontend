@@ -439,7 +439,7 @@ export function Sidebar() {
                          flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/25"
               whileHover={{ scale: 1.05 }}
             >
-              {user.full_name.charAt(0).toUpperCase()}
+              {(user.full_name || user.name || user.email || 'U').charAt(0).toUpperCase()}
             </motion.div>
             <AnimatePresence mode="wait">
               {isExpanded && (

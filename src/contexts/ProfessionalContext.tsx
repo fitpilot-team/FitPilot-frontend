@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/newAuthStore';
 import { JWTPayload, ProfessionalContextType, User } from '../types/api';
 import { getUserRequest } from '../api/auth/auth.api';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { initializeAuthSession } from '@/api/api.client';
 
 const ProfessionalContext = createContext<ProfessionalContextType | undefined>(undefined);
 
@@ -27,20 +28,33 @@ const decodeToken = (token: string): JWTPayload | null => {
 };
 
 export const ProfessionalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { token, user: authUser, setUser } = useAuthStore();
+    const { token, user: authUser, setUser, authChecked } = useAuthStore();
     const [professional, setProfessional] = useState<JWTPayload | null>(null);
     const [storedUserData, setStoredUserData] = useLocalStorage<User | null>('user_data', null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    useEffect(() => {
+        if (authChecked) return;
+        initializeAuthSession(import.meta.env.VITE_NUTRITION_API_URL).catch(() => {
+            // Session stays unauthenticated when refresh cookie is missing/expired.
+        });
+    }, [authChecked]);
+
     // Hydrate authStore from localStorage on mount
     useEffect(() => {
+        if (!authChecked) return;
         if (!authUser && storedUserData && token) {
             setUser(storedUserData);
         }
-    }, [authUser, storedUserData, token, setUser]);
+    }, [authChecked, authUser, storedUserData, token, setUser]);
 
     const refreshProfessional = useCallback(async () => {
+        if (!authChecked) {
+            setIsLoading(true);
+            return;
+        }
+
         if (!token) {
             setProfessional(null);
             setStoredUserData(null);
@@ -79,12 +93,16 @@ export const ProfessionalProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } finally {
             setIsLoading(false);
         }
-    }, [token, authUser, storedUserData, setUser, setStoredUserData]);
+    }, [authChecked, token, authUser, storedUserData, setUser, setStoredUserData]);
 
     useEffect(() => {
-        // Only run on mount or when token changes fundamentally
+        if (!authChecked) {
+            setIsLoading(true);
+            return;
+        }
+
         refreshProfessional();
-    }, [token]); // Only depend on token to avoid re-triggering when user data updates
+    }, [token, authChecked]); // Keep this scoped to auth session state changes
 
     // Sync authUser to localStorage
     useEffect(() => {

@@ -12,7 +12,6 @@ export type LoginResponse = {
   //   email: string;
   // };
   access_token: string;
-  refresh_token: string;
 };
 
 const api = createClient({
@@ -32,4 +31,8 @@ import { User } from "../../types/api";
 export const getUserRequest = async (): Promise<User> => {
   const { data } = await api.get<User>("/auth/me");
   return data;
+};
+
+export const logoutRequest = async (): Promise<void> => {
+  await api.post("/auth/logout");
 };

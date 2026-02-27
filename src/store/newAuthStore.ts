@@ -6,39 +6,54 @@ type AuthState = {
   token: string | null;
   user: User | null;
   isAuthenticated: boolean;
+  authChecked: boolean;
   language: 'es' | 'en';
   setAuth: (data: { token: string }) => void;
+  clearAuth: () => void;
   setUser: (user: User | null) => void;
   logout: () => void;
+  setAuthChecked: (checked: boolean) => void;
   setLanguage: (lang: 'es' | 'en') => void;
 };
 
 export const useAuthStore = create<AuthState>()(
   devtools(
     (set) => ({
-      token: localStorage.getItem('access_token'),
+      token: null,
       user: null,
-      isAuthenticated: !!localStorage.getItem('access_token'),
+      isAuthenticated: false,
+      authChecked: false,
       language: (localStorage.getItem('language') as 'es' | 'en') || 'es',
 
       setAuth: ({ token }) => {
-        localStorage.setItem('access_token', token);
         set({
           token,
           isAuthenticated: true,
+          authChecked: true,
+        });
+      },
+
+      clearAuth: () => {
+        set({
+          token: null,
+          user: null,
+          isAuthenticated: false,
+          authChecked: true,
         });
       },
 
       setUser: (user) => set({ user }),
 
       logout: () => {
-        localStorage.removeItem('access_token');
         set({
           token: null,
           user: null,
           isAuthenticated: false,
+          authChecked: true,
         });
       },
+
+      setAuthChecked: (checked) => set({ authChecked: checked }),
 
       setLanguage: (lang) => {
         localStorage.setItem('language', lang);

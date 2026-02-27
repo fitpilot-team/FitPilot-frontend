@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, AlertCircle, User, Briefcase, Mail, Phone, Calendar, Edit2, X, Save } from 'lucide-react';
+import { CheckCircle, AlertCircle, User, Briefcase, Mail, Phone, Calendar, Edit2, X, Save, Shield, LogOut, Loader2 } from 'lucide-react';
 import { useAvailableSlots, useInsertAvailableSlot, useUpdateAvailableSlot } from '@/features/professional-clients/queries';
 import { IAvailableSlots } from '@/features/professional-clients/types';
 import { useProfessional } from '@/contexts/ProfessionalContext';
 import { AvailableSlot } from '@/components/profile/availableSlot';
+import { ProfileAvatarUploader } from '@/components/profile/ProfileAvatarUploader';
 import { useAuthStore } from '@/store/newAuthStore';
-import { useUser, useUpdateUser } from '@/features/users/queries';
+import { useUser, useUpdateProfilePicture, useUpdateUser } from '@/features/users/queries';
+import { useAuthSessions, useRevokeAuthSession, useLogoutAllAuthSessions } from '@/features/auth/queries';
+import { AuthSession } from '@/features/auth/types';
 
 const DAYS = [
     { id: 1, label: 'Lunes' },
@@ -31,24 +34,120 @@ const formatTimeForInput = (time: string) => {
     return time.substring(0, 5);
 };
 
+const SESSION_FIELD_ORDER = [
+    'id',
+    'ip_address',
+    'device_name',
+    'device',
+    'browser',
+    'os',
+    'platform',
+    'user_agent',
+    'created_at',
+    'last_activity_at',
+    'last_used_at',
+    'expires_at',
+    'updated_at',
+    'revoked_at',
+    'is_current',
+    'current',
+    'isCurrent',
+];
+
+const formatSessionKey = (key: string) => {
+    return key
+        .replace(/_/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const formatSessionValue = (key: string, value: unknown) => {
+    if (value === null || value === undefined || value === '') {
+        return 'N/D';
+    }
+
+    if (typeof value === 'boolean') {
+        return value ? 'Sí' : 'No';
+    }
+
+    if (typeof value === 'number') {
+        return value.toString();
+    }
+
+    if (typeof value === 'string') {
+        const normalizedKey = key.toLowerCase();
+        const looksLikeDate =
+            normalizedKey.endsWith('_at') ||
+            normalizedKey.includes('date') ||
+            normalizedKey.includes('last_') ||
+            normalizedKey.includes('expires');
+
+        if (looksLikeDate) {
+            const parsedDate = new Date(value);
+            if (!isNaN(parsedDate.getTime())) {
+                return parsedDate.toLocaleString('es-MX');
+            }
+        }
+
+        return value;
+    }
+
+    return JSON.stringify(value);
+};
+
+const isCurrentSession = (session: AuthSession) => {
+    return Boolean(session.is_current ?? session.current ?? session.isCurrent);
+};
+
+const getSessionTitle = (session: AuthSession) => {
+    const candidates = ['device_name', 'device', 'browser', 'platform', 'user_agent'];
+
+    for (const key of candidates) {
+        const value = session[key];
+        if (typeof value === 'string' && value.trim()) {
+            return value;
+        }
+    }
+
+    return `Sesión #${session.id}`;
+};
+
+const getSessionEntries = (session: AuthSession) => {
+    const orderedEntries = Object.entries(session)
+        .filter(([, value]) => value !== null && value !== undefined && value !== '')
+        .sort(([keyA], [keyB]) => {
+            const indexA = SESSION_FIELD_ORDER.indexOf(keyA);
+            const indexB = SESSION_FIELD_ORDER.indexOf(keyB);
+            const rankA = indexA === -1 ? Number.MAX_SAFE_INTEGER : indexA;
+            const rankB = indexB === -1 ? Number.MAX_SAFE_INTEGER : indexB;
+            return rankA - rankB;
+        });
+
+    return orderedEntries;
+};
+
 export function ProfilePage() {
     const { professional } = useProfessional();
     const { user } = useAuthStore();
-    console.log('user',user);
     const professionalId = professional?.sub;
     
     // Fetch full user data to get name, lastname, phone, etc.
     const userId = user?.id ? parseInt(user.id) : undefined;
     const { data: fetchedUser, isLoading: isLoadingUser } = useUser(userId);
     const updateUserMutation = useUpdateUser();
+    const updateProfilePictureMutation = useUpdateProfilePicture();
 
     const { data: slots, isLoading: isLoadingSlots } = useAvailableSlots(professionalId || '');
     const insertMutation = useInsertAvailableSlot();
     const updateMutation = useUpdateAvailableSlot();
+    const { data: sessions = [], isLoading: isLoadingSessions, isFetching: isFetchingSessions, refetch: refetchSessions } = useAuthSessions();
+    const revokeSessionMutation = useRevokeAuthSession();
+    const logoutAllSessionsMutation = useLogoutAllAuthSessions();
 
-    const [activeTab, setActiveTab] = useState<'personal' | 'professional'>('personal');
+    const [activeTab, setActiveTab] = useState<'personal' | 'professional' | 'sessions'>('personal');
     const [workSlots, setWorkSlots] = useState<IAvailableSlots[]>([]);
     const [savingSlots, setSavingSlots] = useState<number[]>([]);
+    const [closingSessionIds, setClosingSessionIds] = useState<number[]>([]);
     const [showToast, setShowToast] = useState(false);
     
     // Edit Mode State
@@ -61,6 +160,8 @@ export function ProfilePage() {
 
     const isSaving = insertMutation.isPending || updateMutation.isPending;
     const isUpdatingUser = updateUserMutation.isPending;
+    const isUploadingPicture = updateProfilePictureMutation.isPending;
+    const isSyncingSessions = isFetchingSessions || revokeSessionMutation.isPending || logoutAllSessionsMutation.isPending;
 
     // Derived user data - prioritize fetched data over auth store data
     // The API might return 'name' and 'lastname' separately, or a 'full_name'
@@ -69,6 +170,8 @@ export function ProfilePage() {
     const displayLastName = fetchedUser?.lastname || user?.lastname || user?.full_name?.split(' ').slice(1).join(' ') || '';
     const displayEmail = fetchedUser?.email || user?.email || '';
     const displayPhone = fetchedUser?.phone_number || user?.phone || '';
+    const displayProfilePicture = fetchedUser?.profile_picture || null;
+    const sortedSessions = [...sessions].sort((a, b) => Number(isCurrentSession(b)) - Number(isCurrentSession(a)));
 
     // Initialize form data when user data is available
     useEffect(() => {
@@ -212,6 +315,43 @@ export function ProfilePage() {
         setIsEditing(false);
     };
 
+    const handleSaveProfilePicture = async (profilePicture: Blob) => {
+        await updateProfilePictureMutation.mutateAsync(profilePicture);
+    };
+
+    const handleCloseSession = async (session: AuthSession) => {
+        const isCurrent = isCurrentSession(session);
+        const confirmMessage = isCurrent
+            ? 'Vas a cerrar tu sesión actual. ¿Deseas continuar?'
+            : '¿Deseas cerrar esta sesión?';
+
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+
+        setClosingSessionIds((prev) => [...prev, session.id]);
+
+        try {
+            await revokeSessionMutation.mutateAsync(session.id);
+        } catch (error) {
+            console.error('Failed to revoke session:', error);
+        } finally {
+            setClosingSessionIds((prev) => prev.filter((id) => id !== session.id));
+        }
+    };
+
+    const handleCloseAllSessions = async () => {
+        if (!window.confirm('¿Deseas cerrar todas las sesiones activas?')) {
+            return;
+        }
+
+        try {
+            await logoutAllSessionsMutation.mutateAsync();
+        } catch (error) {
+            console.error('Failed to logout all sessions:', error);
+        }
+    };
+
     return (
         <div className="max-w-5xl mx-auto space-y-8 pb-20">
             {/* Header */}
@@ -221,7 +361,6 @@ export function ProfilePage() {
                     <p className="text-gray-500 mt-1">Gestiona tu información personal y profesional.</p>
                 </div>
 
-                {/* Auto-save status indicator (Only relevant for professional tab) */}
                 {activeTab === 'professional' && (
                     <div className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-100 rounded-2xl shadow-sm">
                         {isSaving ? (
@@ -233,6 +372,22 @@ export function ProfilePage() {
                             <div className="flex items-center gap-2 text-nutrition-500">
                                 <CheckCircle className="w-4 h-4" />
                                 <span className="text-xs font-bold uppercase tracking-wider">Sincronizado</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'sessions' && (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-100 rounded-2xl shadow-sm">
+                        {isSyncingSessions ? (
+                            <div className="flex items-center gap-2 text-blue-600">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span className="text-xs font-bold uppercase tracking-wider">Actualizando...</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 text-blue-600">
+                                <CheckCircle className="w-4 h-4" />
+                                <span className="text-xs font-bold uppercase tracking-wider">Sesiones al día</span>
                             </div>
                         )}
                     </div>
@@ -265,6 +420,19 @@ export function ProfilePage() {
                     <div className="flex items-center justify-center gap-2">
                         <Briefcase className="w-4 h-4" />
                         Configuración Profesional
+                    </div>
+                </button>
+                <button
+                    onClick={() => setActiveTab('sessions')}
+                    className={`w-full rounded-lg py-2.5 text-sm font-medium leading-5 ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2
+                        ${activeTab === 'sessions'
+                            ? 'bg-white text-blue-700 shadow'
+                            : 'text-gray-500 hover:bg-white/12 hover:text-white'
+                        }`}
+                >
+                    <div className="flex items-center justify-center gap-2">
+                        <Shield className="w-4 h-4" />
+                        Sesiones
                     </div>
                 </button>
             </div>
@@ -415,9 +583,13 @@ export function ProfilePage() {
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 blur-2xl opacity-50" />
                                 
                                 <div className="relative z-10 flex flex-col items-center text-center">
-                                    <div className="w-24 h-24 rounded-2xl bg-linear-to-br from-blue-500 to-blue-700 shadow-lg shadow-blue-500/30 flex items-center justify-center text-white text-3xl font-bold mb-4">
-                                        {displayFirstName.charAt(0).toUpperCase()}
-                                    </div>
+                                    <ProfileAvatarUploader
+                                        firstName={displayFirstName}
+                                        lastName={displayLastName}
+                                        imageUrl={displayProfilePicture}
+                                        onSave={handleSaveProfilePicture}
+                                        isSaving={isUploadingPicture}
+                                    />
                                     <h3 className="text-lg font-bold text-gray-900">{displayFirstName} {displayLastName}</h3>
                                     <span className="inline-flex mt-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100 uppercase tracking-wide">
                                         {user?.role}
@@ -435,7 +607,7 @@ export function ProfilePage() {
                         )}
 
                     </motion.div>
-                ) : (
+                ) : activeTab === 'professional' ? (
                     <motion.div
                         key="professional"
                         initial={{ opacity: 0, y: 10 }}
@@ -498,6 +670,114 @@ export function ProfilePage() {
                                 ))
                             )}
                         </div>
+                    </motion.div>
+                ) : (
+                    <motion.div
+                        key="sessions"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.2 }}
+                        className="space-y-4"
+                    >
+                        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div>
+                                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                    <Shield className="w-5 h-5 text-blue-600" />
+                                    Gestión de Sesiones
+                                </h2>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Revisa tus sesiones activas y cierra las que no reconozcas.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => refetchSessions()}
+                                    disabled={isSyncingSessions}
+                                    className="px-4 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                                >
+                                    Actualizar
+                                </button>
+                                <button
+                                    onClick={handleCloseAllSessions}
+                                    disabled={logoutAllSessionsMutation.isPending}
+                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 text-red-700 text-sm font-medium border border-red-100 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                                >
+                                    {logoutAllSessionsMutation.isPending ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <LogOut className="w-4 h-4" />
+                                    )}
+                                    Cerrar todas
+                                </button>
+                            </div>
+                        </div>
+
+                        {isLoadingSessions ? (
+                            Array.from({ length: 3 }).map((_, index) => (
+                                <div key={index} className="p-6 bg-white border border-gray-100 rounded-3xl animate-pulse">
+                                    <div className="w-40 h-5 bg-gray-200 rounded-md mb-4" />
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="h-14 bg-gray-100 rounded-xl" />
+                                        <div className="h-14 bg-gray-100 rounded-xl" />
+                                        <div className="h-14 bg-gray-100 rounded-xl" />
+                                        <div className="h-14 bg-gray-100 rounded-xl" />
+                                    </div>
+                                </div>
+                            ))
+                        ) : sortedSessions.length === 0 ? (
+                            <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm text-center">
+                                <p className="text-gray-500 font-medium">No hay sesiones activas para mostrar.</p>
+                            </div>
+                        ) : (
+                            sortedSessions.map((session) => {
+                                const currentSession = isCurrentSession(session);
+                                const isClosing = closingSessionIds.includes(session.id);
+
+                                return (
+                                    <div key={session.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                            <div>
+                                                <p className="font-semibold text-gray-900">{getSessionTitle(session)}</p>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-xs text-gray-500">Sesión #{session.id}</span>
+                                                    {currentSession && (
+                                                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                                                            Sesión actual
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => handleCloseSession(session)}
+                                                disabled={isClosing || logoutAllSessionsMutation.isPending}
+                                                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-100 bg-red-50 text-red-700 text-sm font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
+                                            >
+                                                {isClosing ? (
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                    <LogOut className="w-4 h-4" />
+                                                )}
+                                                Cerrar sesión
+                                            </button>
+                                        </div>
+
+                                        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {getSessionEntries(session).map(([key, value]) => (
+                                                <div key={`${session.id}-${key}`} className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2">
+                                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                                                        {formatSessionKey(key)}
+                                                    </p>
+                                                    <p className="text-sm text-gray-700 mt-1 break-all">
+                                                        {formatSessionValue(key, value)}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
                     </motion.div>
                 )}
             </AnimatePresence>

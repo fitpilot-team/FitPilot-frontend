@@ -23,6 +23,17 @@ export const updateUser = async (id: number, userData: Partial<IUserProfessional
     return data;
 };
 
+export const updateProfilePicture = async (imageBlob: Blob): Promise<void> => {
+    const formData = new FormData();
+    const fileName =
+        imageBlob instanceof File && imageBlob.name
+            ? imageBlob.name
+            : `profile-${Date.now()}.jpg`;
+
+    formData.append('file', imageBlob, fileName);
+    await client.patch('/v1/users/me/profile-picture', formData);
+};
+
 export const deleteUser = async (id: number): Promise<void> => {
     await client.delete(`/v1/users/${id}`);
 };

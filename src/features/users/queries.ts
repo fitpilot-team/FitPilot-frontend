@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createUser, deleteUser, getUserById, getUsers, updateUser, lookupPhone, validatePhone } from "./api";
+import { createUser, deleteUser, getUserById, getUsers, updateUser, updateProfilePicture, lookupPhone, validatePhone } from "./api";
 import { IUserProfessionalClient } from "./types";
 
 export const useUsers = () => {
@@ -35,6 +35,17 @@ export const useUpdateUser = () => {
 
     return useMutation({
         mutationFn: ({ id, data }: { id: number; data: Partial<IUserProfessionalClient> }) => updateUser(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["users"] });
+        },
+    });
+};
+
+export const useUpdateProfilePicture = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: updateProfilePicture,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["users"] });
         },

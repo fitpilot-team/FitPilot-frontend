@@ -5,6 +5,7 @@ export interface IProfessionalClient {
     name?: string;
     lastname?: string;
     email?: string;
+    activation_url?: string | null;
     profile_picture?: string;
     phone_number?: string | null;
     deleted_at?: string | null;

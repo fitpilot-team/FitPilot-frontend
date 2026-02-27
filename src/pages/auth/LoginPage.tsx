@@ -14,7 +14,7 @@ import { useLoginMutation } from '@/hooks/useLogin';
 export function LoginPage() {
     const [isLogin] = useState(true);
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuthStore();
+    const { isAuthenticated, authChecked } = useAuthStore();
     const { mutate: login, isPending: isLoading, error } = useLoginMutation();
 
     const {
@@ -30,10 +30,10 @@ export function LoginPage() {
     });
 
     useEffect(() => {
-        if (isAuthenticated) {
+        if (authChecked && isAuthenticated) {
             navigate('/', { replace: true });
         }
-    }, [isAuthenticated, navigate]);
+    }, [authChecked, isAuthenticated, navigate]);
 
     const onSubmit = (data: LoginFormData) => {
         login({ ...data, app_type: 'PROFESSIONAL_APP' }, {

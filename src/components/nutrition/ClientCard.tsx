@@ -1,17 +1,31 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronRight, Calendar, Dumbbell, Utensils } from 'lucide-react';
+import { Check, ChevronRight, Calendar, Copy, Dumbbell, Utensils } from 'lucide-react';
 
 interface ClientCardProps {
   image: string;
   clientName: string;
   clientLastName: string;
   nextAppointment: string | null;
+  activationUrl?: string | null;
   serviceType?: string;
   services?: string[];
   onAction?: () => void;
 }
 
-export function ClientCard({ image, clientName, clientLastName, nextAppointment, serviceType, services, onAction }: ClientCardProps) {
+export function ClientCard({ image, clientName, clientLastName, nextAppointment, activationUrl, serviceType, services, onAction }: ClientCardProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyActivationUrl = async () => {
+    if (!activationUrl) return;
+    try {
+      await navigator.clipboard.writeText(activationUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Fallback is intentionally silent to keep the UI minimal.
+    }
+  };
   
   const getServiceBadge = (name: string) => {
       // Generate a consistent color based on the service name length or char code if needed, 
@@ -109,6 +123,29 @@ export function ClientCard({ image, clientName, clientLastName, nextAppointment,
                 </div>
             )}
         </div>
+
+        {activationUrl ? (
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+              Activación
+            </span>
+            <button
+              type="button"
+              onClick={handleCopyActivationUrl}
+              className="group inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50/70 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 transition hover:border-emerald-200 hover:bg-emerald-100/80"
+              title="Copiar URL de activación"
+            >
+              <span className="max-w-[150px] truncate">
+                {activationUrl}
+              </span>
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-emerald-600" />
+              ) : (
+                <Copy className="h-3.5 w-3.5 text-emerald-500 opacity-80 group-hover:opacity-100" />
+              )}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Action Button */}

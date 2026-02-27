@@ -38,6 +38,7 @@ import { ClientsMenusPage } from './pages/nutrition/meal-plans/ClientsMenusPage'
 import { ClientWeeklyMenuView } from './pages/nutrition/meal-plans/ClientWeeklyMenuView';
 import { RegisterClientPage } from './pages/nutrition/RegisterClientPage';
 import { DraftMenusPage } from './pages/nutrition/meal-plans/DraftMenusPage';
+import { ProfessionalOnboardingPage } from './pages/onboarding/ProfessionalOnboardingPage';
 
 function App() {
 
@@ -82,6 +83,15 @@ function App() {
         </Route>
 
         {/* Protected Routes */}
+        <Route
+          path="/onboarding"
+          element={
+            <ProtectedRoute>
+              <ProfessionalOnboardingPage />
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/"
           element={

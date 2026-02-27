@@ -4,6 +4,7 @@ import { UserCircleIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/o
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/newAuthStore';
 import { useNavigate } from 'react-router-dom';
+import { logoutRequest } from '@/api/auth/auth.api';
 
 export function UserMenu() {
   const { t } = useTranslation(['auth', 'common']);
@@ -12,7 +13,13 @@ export function UserMenu() {
 
   if (!isAuthenticated) return null;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await logoutRequest();
+    } catch {
+      // Local logout still executes even if backend logout fails.
+    }
+
     logout();
     navigate('/auth/login');
   };

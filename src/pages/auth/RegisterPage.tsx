@@ -1,18 +1,140 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
-import { Mail, Lock, Linkedin, Twitter, Dumbbell, Zap, Timer } from 'lucide-react';
+import { Mail, Lock, Dumbbell, Zap, Timer, User, Phone } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Modal } from '../../components/common/Modal';
+import { OTPInput } from '../../components/common/OTPInput';
+import { useSendVerification, useSignupMutation, useVerifyPhone } from '@/features/auth/queries';
+import { useAuthStore } from '@/store/newAuthStore';
+import { getUserRequest } from '@/api/auth/auth.api';
 
 export function RegisterPage() {
-    const [isLoading, setIsLoading] = useState(false);
+    const navigate = useNavigate();
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [verificationCode, setVerificationCode] = useState('');
+    const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+    const [isPhoneVerified, setIsPhoneVerified] = useState(false);
+    const [verificationAttempts, setVerificationAttempts] = useState(0);
+    const [cooldownTime, setCooldownTime] = useState(0);
+    
+    const sendVerificationMutation = useSendVerification();
+    const verifyPhoneMutation = useVerifyPhone();
+    const signupMutation = useSignupMutation();
+
+    const isFormValid = 
+        firstName.trim() !== '' &&
+        lastName.trim() !== '' &&
+        email.trim() !== '' &&
+        password.length >= 8 &&
+        confirmPassword !== '' &&
+        password === confirmPassword &&
+        isPhoneVerified;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        setIsLoading(true);
-        // Simulate API call
-        setTimeout(() => setIsLoading(false), 2000);
+        if (!isFormValid || signupMutation.isPending) return;
+
+        signupMutation.mutate(
+            {
+                name: firstName.trim(),
+                lastname: lastName.trim(),
+                email: email.trim(),
+                password,
+                role: 'PROFESSIONAL',
+                phone_number: phoneNumber.trim(),
+            },
+            {
+                onSuccess: async (response) => {
+                    if (response.access_token) {
+                        useAuthStore.getState().setAuth({ token: response.access_token });
+
+                        try {
+                            const user = await getUserRequest();
+                            useAuthStore.getState().setUser(user);
+                        } catch (error) {
+                            console.error('Failed to load user after signup:', error);
+                        }
+
+                        navigate('/', { replace: true });
+                        return;
+                    }
+
+                    console.warn('Signup succeeded but no access_token was returned');
+                },
+                onError: (error) => {
+                    console.error('Failed to signup:', error);
+                },
+            }
+        );
+    };
+
+    useEffect(() => {
+        if (cooldownTime > 0) {
+            const timer = setTimeout(() => setCooldownTime(cooldownTime - 1), 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [cooldownTime]);
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        if (m > 0) {
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+        return `${s}s`;
+    };
+
+    const handleSendVerification = () => {
+        if (!phoneNumber || cooldownTime > 0) return;
+        
+        sendVerificationMutation.mutate(
+            { phone_number: phoneNumber },
+            {
+                onSuccess: () => {
+                    setIsVerificationModalOpen(true);
+                    
+                    const nextAttempt = verificationAttempts + 1;
+                    setVerificationAttempts(nextAttempt);
+                    
+                    // Backoff logic
+                    if (nextAttempt === 1) setCooldownTime(60); // 1 minute
+                    else if (nextAttempt === 2) setCooldownTime(300); // 5 minutes
+                    else if (nextAttempt === 3) setCooldownTime(900); // 15 minutes
+                    else setCooldownTime(1800); // 30 minutes
+                },
+                onError: (error) => {
+                    console.error("Failed to send verification:", error);
+                    // Handle error (show toast, etc.)
+                }
+            }
+        );
+    };
+
+    const handleVerifyPhone = () => {
+        if (!verificationCode || verificationCode.length !== 6) return;
+        
+        verifyPhoneMutation.mutate(
+            { phone_number: phoneNumber, code: verificationCode },
+            {
+                onSuccess: () => {
+                    setIsVerificationModalOpen(false);
+                    setVerificationCode('');
+                    setIsPhoneVerified(true);
+                    // Handle success (show success message, mark phone as verified, etc.)
+                },
+                onError: (error) => {
+                    console.error("Failed to verify phone:", error);
+                    // Handle error (show toast, etc.)
+                }
+            }
+        );
     };
 
     return (
@@ -101,51 +223,109 @@ export function RegisterPage() {
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-5">
+                        <div className="grid grid-cols-2 gap-4">
+                            <Input 
+                                label="First Name"
+                                placeholder="John"
+                                type="text"
+                                icon={<User className="w-5 h-5" />}
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
+                            />
+                            <Input 
+                                label="Last Name"
+                                placeholder="Doe"
+                                type="text"
+                                icon={<User className="w-5 h-5" />}
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex gap-2 items-end">
+                            <div className="flex-1">
+                                <Input 
+                                    label="Phone Number"
+                                    placeholder="+1 234 567 890"
+                                    type="tel"
+                                    icon={<Phone className="w-5 h-5" />}
+                                    value={phoneNumber}
+                                    onChange={(e) => setPhoneNumber(e.target.value)}
+                                    disabled={isPhoneVerified}
+                                />
+                            </div>
+                            <Button 
+                                type="button" 
+                                variant="secondary"
+                                className="mb-[2px]"
+                                onClick={handleSendVerification}
+                                isLoading={sendVerificationMutation.isPending}
+                                disabled={isPhoneVerified || !phoneNumber || cooldownTime > 0}
+                            >
+                                {isPhoneVerified 
+                                    ? "Verified" 
+                                    : cooldownTime > 0 
+                                        ? `Resend in ${formatTime(cooldownTime)}` 
+                                        : verificationAttempts > 0 
+                                            ? "Resend" 
+                                            : "Validate"}
+                            </Button>
+                        </div>
+
                         <Input 
                             label="Email"
                             placeholder="trainer1@fitpilot.com"
                             type="email"
                             icon={<Mail className="w-5 h-5" />}
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
                         />
                         
-                        <div className="space-y-1">
-                            <Input 
-                                label="Password"
-                                placeholder="••••••••"
-                                type="password"
-                                icon={<Lock className="w-5 h-5" />}
-                            />
+                        <div className="space-y-4">
+                            <div>
+                                <Input 
+                                    label="Password"
+                                    placeholder="••••••••"
+                                    type="password"
+                                    icon={<Lock className="w-5 h-5" />}
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                />
+                                {password.length > 0 && password.length < 8 && (
+                                    <p className="text-xs text-red-500 font-medium pl-1 mt-1">
+                                        Password must be at least 8 characters
+                                    </p>
+                                )}
+                            </div>
+                            <div className="space-y-1">
+                                <Input 
+                                    label="Confirm Password"
+                                    placeholder="••••••••"
+                                    type="password"
+                                    icon={<Lock className="w-5 h-5" />}
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                />
+                                {password && confirmPassword && password === confirmPassword && (
+                                    <p className="text-xs text-green-600 font-medium pl-1">
+                                        ✓ Passwords match
+                                    </p>
+                                )}
+                            </div>
                         </div>
 
                         <Button 
                             type="submit" 
                             className="w-full"
-                            isLoading={isLoading}
+                            isLoading={signupMutation.isPending}
+                            disabled={!isFormValid || signupMutation.isPending}
                         >
                             Sign Up
                         </Button>
                     </form>
 
                     <div className="mt-8">
-                        <div className="relative">
-                            <div className="absolute inset-0 flex items-center">
-                                <div className="w-full border-t border-gray-100"></div>
-                            </div>
-                            <div className="relative flex justify-center text-sm">
-                                <span className="px-4 bg-white text-gray-400">Or continue with</span>
-                            </div>
-                        </div>
-
-                        <div className="mt-6 flex justify-center gap-4">
-                            <button className="p-2 border border-blue-100 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-colors group hover:cursor-pointer">
-                                <Linkedin className="w-5 h-5 text-gray-400 group-hover:text-[#0077b5] transition-colors" />
-                            </button>
-                            <button className="p-2 border border-blue-100 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition-colors group hover:cursor-pointer">
-                                <Twitter className="w-5 h-5 text-gray-400 group-hover:text-[#1da1f2] transition-colors" />
-                            </button>
-                        </div>
-
-                        <div className="mt-8 text-center">
+                        <div className="text-center">
                             <p className="text-sm text-gray-500">
                                 Already have an account?{' '}
                                 <Link to="/auth/login" className="font-semibold text-blue-600 hover:text-blue-700 transition-colors hover:cursor-pointer">
@@ -156,6 +336,46 @@ export function RegisterPage() {
                     </div>
                 </div>
             </div>
+
+            <Modal
+                isOpen={isVerificationModalOpen}
+                onClose={() => {
+                    setIsVerificationModalOpen(false);
+                    setVerificationCode('');
+                }}
+                title="Verify Phone Number"
+            >
+                <div className="space-y-4">
+                    <p className="text-gray-600 text-sm mb-6 text-center">
+                        Please enter the 6-digit code sent to <span className="font-semibold text-gray-800">{phoneNumber}</span>
+                    </p>
+                    <div className="flex justify-center mb-8">
+                        <OTPInput
+                            value={verificationCode}
+                            onChange={setVerificationCode}
+                            length={6}
+                        />
+                    </div>
+                    <div className="flex justify-end gap-2 mt-4">
+                        <Button
+                            variant="secondary"
+                            onClick={() => {
+                                setIsVerificationModalOpen(false);
+                                setVerificationCode('');
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleVerifyPhone}
+                            isLoading={verifyPhoneMutation.isPending}
+                            disabled={verificationCode.length !== 6}
+                        >
+                            Accept
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 }

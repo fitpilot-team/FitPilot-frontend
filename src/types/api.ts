@@ -58,16 +58,25 @@ export type Language = 'es' | 'en';
 export interface User {
   id: string;
   email: string;
-  full_name: string;
+  full_name?: string;
   name?: string;
-  lastname?: string;
+  lastname?: string | null;
+  username?: string | null;
   phone?: string;
-  role: 'admin' | 'trainer' | 'client';
-  preferred_language: Language;
-  is_active: boolean;
-  email_verified: boolean;
-  created_at: string;
-  updated_at: string;
+  phone_number?: string | null;
+  role: string;
+  preferred_language?: Language;
+  is_active?: boolean;
+  email_verified?: boolean;
+  is_phone_verified?: boolean;
+  onboarding_status?: string | null;
+  profile_picture?: string | null;
+  professional_role?: string[];
+  genre?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface UserUpdate {

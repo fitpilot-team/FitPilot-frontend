@@ -1,7 +1,6 @@
 // import { apiClient } from './api';
 import type { LoginRequest, LoginResponse, RegisterRequest, User, UserUpdate } from '../types/api';
-
-const AUTH_TOKEN_KEY = 'access_token';
+import { useAuthStore } from '../store/newAuthStore';
 
 export const authService = {
   /**
@@ -19,9 +18,9 @@ export const authService = {
 
     const response = mockResponse;
 
-    // Store token in localStorage
+    // Keep access token only in memory store
     if (response.access_token) {
-      localStorage.setItem(AUTH_TOKEN_KEY, response.access_token);
+      useAuthStore.getState().setAuth({ token: response.access_token });
     }
 
     return response;
@@ -92,28 +91,28 @@ export const authService = {
    * Logout - clear token and redirect
    */
   logout(): void {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
-    window.location.href = '/login';
+    useAuthStore.getState().logout();
+    window.location.href = '/auth/login';
   },
 
   /**
    * Get stored token
    */
   getToken(): string | null {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
+    return useAuthStore.getState().token;
   },
 
   /**
    * Check if user is authenticated
    */
   isAuthenticated(): boolean {
-    return !!this.getToken();
+    return useAuthStore.getState().isAuthenticated;
   },
 
   /**
    * Set token manually (useful for testing)
    */
   setToken(token: string): void {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    useAuthStore.getState().setAuth({ token });
   },
 };
