@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { LoginPage } from './pages/auth/LoginPage';
@@ -7,17 +7,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ExercisesPage } from './pages/ExercisesPage';
 import { TrainingTemplatesPage } from './pages/TrainingTemplatesPage';
 import { MesocycleEditorPage } from './pages/MesocycleEditorPage';
-import { AIGeneratorPage } from './pages/AIGeneratorPage';
-import { ClientsPage } from './pages/ClientsPage';
-import { ClientLayout } from './components/layout/ClientLayout';
 import { MainLayout } from './components/layout/MainLayout';
-import {
-  ClientOverviewPage,
-  ClientInterviewPage,
-  ClientProgramsPage,
-  ClientMetricsPage,
-  ClientDietPage,
-} from './pages/client';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { NutritionClientsPage } from './pages/nutrition/NutritionClientsPage';
 import { NutritionDashboardPage } from './pages/nutrition/NutritionDashboardPage';
@@ -40,8 +30,12 @@ import { RegisterClientPage } from './pages/nutrition/RegisterClientPage';
 import { DraftMenusPage } from './pages/nutrition/meal-plans/DraftMenusPage';
 import { ProfessionalOnboardingPage } from './pages/onboarding/ProfessionalOnboardingPage';
 
-function App() {
+function LegacyMesocycleRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={id ? `/training/programs/${id}` : '/training/programs'} replace />;
+}
 
+function App() {
   return (
     <>
       <Toaster
@@ -104,7 +98,7 @@ function App() {
         />
 
         <Route
-          path="/exercises"
+          path="/training/exercises"
           element={
             <ProtectedRoute>
               <MainLayout>
@@ -115,39 +109,7 @@ function App() {
         />
 
         <Route
-          path="/clients"
-          element={
-            <ProtectedRoute>
-              <MainLayout>
-                <ClientsPage />
-              </MainLayout>
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Client Workspace - Nested Routes with MainLayout */}
-        <Route
-          path="/clients/:clientId"
-          element={
-            <ProtectedRoute>
-              <MainLayout>
-                <ClientLayout />
-              </MainLayout>
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<ClientOverviewPage />} />
-          <Route path="interview" element={<ClientInterviewPage />} />
-          <Route path="programs" element={<ClientProgramsPage />} />
-          <Route path="programs/new" element={<MesocycleEditorPage />} />
-          <Route path="programs/:id" element={<MesocycleEditorPage />} />
-          <Route path="metrics" element={<ClientMetricsPage />} />
-          <Route path="diet" element={<ClientDietPage />} />
-        </Route>
-
-        {/* Training Templates (reusable, no client assigned) */}
-        <Route
-          path="/templates"
+          path="/training/programs"
           element={
             <ProtectedRoute>
               <MainLayout>
@@ -158,7 +120,7 @@ function App() {
         />
 
         <Route
-          path="/templates/new"
+          path="/training/programs/new"
           element={
             <ProtectedRoute>
               <MainLayout>
@@ -168,27 +130,50 @@ function App() {
           }
         />
 
+        <Route
+          path="/training/programs/:id"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <MesocycleEditorPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/exercises"
+          element={<Navigate to="/training/exercises" replace />}
+        />
+        <Route
+          path="/templates"
+          element={<Navigate to="/training/programs" replace />}
+        />
+        <Route
+          path="/templates/new"
+          element={<Navigate to="/training/programs/new" replace />}
+        />
         <Route
           path="/templates/:id"
-          element={
-            <ProtectedRoute>
-              <MainLayout>
-                <MesocycleEditorPage />
-              </MainLayout>
-            </ProtectedRoute>
-          }
+          element={<LegacyMesocycleRedirect />}
         />
-
-        {/* Client Programs (legacy route for backwards compatibility) */}
         <Route
           path="/mesocycles/:id"
-          element={
-            <ProtectedRoute>
-              <MainLayout>
-                <MesocycleEditorPage />
-              </MainLayout>
-            </ProtectedRoute>
-          }
+          element={<LegacyMesocycleRedirect />}
+        />
+
+        <Route
+          path="/training"
+          element={<Navigate to="/training/programs" replace />}
+        />
+
+        <Route
+          path="/clients"
+          element={<Navigate to="/nutrition/clients" replace />}
+        />
+        <Route
+          path="/clients/:clientId/*"
+          element={<Navigate to="/nutrition/clients" replace />}
         />
 
         <Route
@@ -204,13 +189,7 @@ function App() {
 
         <Route
           path="/ai-generator"
-          element={
-            <ProtectedRoute>
-              <MainLayout>
-                <AIGeneratorPage />
-              </MainLayout>
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/training/programs" replace />}
         />
 
 

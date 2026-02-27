@@ -4,6 +4,7 @@
   "appTagline": "Gestión de Entrenamientos",
   "nav": {
     "dashboard": "Panel",
+    "training": "Entrenamiento",
     "clients": "Clientes",
     "exercises": "Ejercicios",
     "templates": "Plantillas",

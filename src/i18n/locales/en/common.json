@@ -4,6 +4,7 @@
   "appTagline": "Workout Management",
   "nav": {
     "dashboard": "Dashboard",
+    "training": "Training",
     "clients": "Clients",
     "exercises": "Exercises",
     "templates": "Templates",
@@ -13,7 +14,8 @@
     "nutritionClients": "Clients",
     "nutritionCreateDiet": "Create New Diet",
     "nutritionMealBuilder": "Meal Builder",
-    "clientsMenus": "Client Menus"
+    "clientsMenus": "Client Menus",
+    "clientPlans": "Client Plans"
   },
   "mealPlans": {
     "overview": "Overview",
