@@ -28,7 +28,9 @@ import { ClientWeeklyMenuView } from './pages/nutrition/meal-plans/ClientWeeklyM
 import { RegisterClientPage } from './pages/nutrition/RegisterClientPage';
 import { DraftMenusPage } from './pages/nutrition/meal-plans/DraftMenusPage';
 import { ProfessionalOnboardingPage } from './pages/onboarding/ProfessionalOnboardingPage';
-
+import { SubscriptionPlansPage } from './pages/SubscriptionPlansPage';
+import { CheckoutSuccessPage } from './pages/CheckoutSuccessPage';
+import { CheckoutCancelPage } from './pages/CheckoutCancelPage';
 function LegacyMesocycleRedirect() {
   const { id } = useParams<{ id: string }>();
   return <Navigate to={id ? `/training/programs/${id}` : '/training/programs'} replace />;
@@ -99,7 +101,7 @@ function App() {
         <Route
           path="/training/exercises"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredAccess="training">
               <MainLayout>
                 <ExercisesPage />
               </MainLayout>
@@ -110,7 +112,7 @@ function App() {
         <Route
           path="/training/programs"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredAccess="training">
               <MainLayout>
                 <TrainingTemplatesPage />
               </MainLayout>
@@ -121,7 +123,7 @@ function App() {
         <Route
           path="/training/programs/new"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredAccess="training">
               <MainLayout>
                 <MesocycleEditorPage />
               </MainLayout>
@@ -132,7 +134,7 @@ function App() {
         <Route
           path="/training/programs/:id"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredAccess="training">
               <MainLayout>
                 <MesocycleEditorPage />
               </MainLayout>
@@ -187,6 +189,39 @@ function App() {
         />
 
         <Route
+          path="/subscriptions/plans"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <SubscriptionPlansPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/subscriptions/success"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <CheckoutSuccessPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/subscriptions/cancel"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <CheckoutCancelPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/ai-generator"
           element={<Navigate to="/training/programs" replace />}
         />
@@ -207,10 +242,38 @@ function App() {
           <Route path="agenda" element={<NutritionAgendaPage />} />
           <Route path="clients" element={<NutritionClientsPage />} />
           <Route path="clients/new" element={<RegisterClientPage />} />
-          <Route path="clients/:clientId/medical-history" element={<NutritionClientMedicalHistoryPage />} />
-          <Route path="clients/:clientId" element={<NutritionClientDetailPage />} />
-          <Route path="consultation/:id" element={<NutritionConsultationPage />} />
-          <Route path="meal-plans" element={<MealPlansLayout />}>
+          <Route
+            path="clients/:clientId/medical-history"
+            element={
+              <ProtectedRoute requiredAccess="nutrition">
+                <NutritionClientMedicalHistoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="clients/:clientId"
+            element={
+              <ProtectedRoute requiredAccess="nutrition">
+                <NutritionClientDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="consultation/:id"
+            element={
+              <ProtectedRoute requiredAccess="nutrition">
+                <NutritionConsultationPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="meal-plans"
+            element={
+              <ProtectedRoute requiredAccess="nutrition">
+                <MealPlansLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<MealOverviewPage />} />
             <Route path="builder" element={<MealBuilderPage />} />
             <Route path="templates" element={<MealTemplatesPage />} />

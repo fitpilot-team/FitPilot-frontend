@@ -1,18 +1,18 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Menu, Transition, MenuItems, MenuItem, MenuButton } from '@headlessui/react';
 import { UserCircleIcon, ArrowRightOnRectangleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/newAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { logoutRequest } from '@/api/auth/auth.api';
+import { useUser } from '@/features/users/queries';
 
 export function UserMenu() {
   const { t } = useTranslation(['auth', 'common']);
   const { user, logout, isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  if (!isAuthenticated) return null;
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -29,10 +29,21 @@ export function UserMenu() {
     }
   };
 
-  // If user is not yet loaded, we use a placeholder or dummy data
-  const displayName = user?.full_name || 'User';
-  const displayEmail = user?.email || '';
+  const userId = user?.id ? Number(user.id) : undefined;
+  const { data: fetchedUser } = useUser(userId);
+  const displayName =
+    [fetchedUser?.name, fetchedUser?.lastname].filter(Boolean).join(' ') ||
+    user?.full_name ||
+    'User';
+  const displayEmail = fetchedUser?.email || user?.email || '';
+  const profilePicture = fetchedUser?.profile_picture || user?.profile_picture || null;
   const initial = displayName.charAt(0).toUpperCase();
+
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [profilePicture]);
+
+  if (!isAuthenticated) return null;
 
   return (
     <>
@@ -54,7 +65,16 @@ export function UserMenu() {
         disabled={isLoggingOut}
       >
         <div className={`h-9 w-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm`}>
-          {initial}
+          {profilePicture && !avatarLoadError ? (
+            <img
+              src={profilePicture}
+              alt={displayName}
+              className="h-full w-full rounded-full object-cover"
+              onError={() => setAvatarLoadError(true)}
+            />
+          ) : (
+            initial
+          )}
         </div>
       </MenuButton>
 
