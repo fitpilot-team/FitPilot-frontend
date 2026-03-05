@@ -108,7 +108,12 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USER: ${{ github.repository_owner }}
           APP_DIR: ${{ vars.VPS_FRONTEND_PATH || '/opt/FitPilot-frontend' }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
         run: |
+          set -euo pipefail
+
           if [ "${GITHUB_REF_NAME}" = "main" ]; then
             FRONTEND_PORT="4000"
             FRONTEND_CONTAINER_NAME="fitpilot-frontend-prod"
@@ -119,21 +124,14 @@ jobs:
             PROJECT_NAME="fitpilot-frontend-dev"
           fi
 
-          PORT="${{ secrets.VPS_PORT }}"
-          if [ -z "$PORT" ]; then PORT=22; fi
+          PORT="${VPS_PORT:-22}"
+          SSH_OPTS="-p ${PORT} -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
 
-          sshpass -p "$VPS_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=yes \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << EOF
-          set -e
-          cd "$APP_DIR"
-
-          export FRONTEND_PORT="$FRONTEND_PORT"
-          export FRONTEND_CONTAINER_NAME="$FRONTEND_CONTAINER_NAME"
-
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-
-          docker compose -p "$PROJECT_NAME" pull
-          docker compose -p "$PROJECT_NAME" up -d
-          docker image prune -f
-          docker compose -p "$PROJECT_NAME" ps
-          EOF
+          sshpass -p "${VPS_PASSWORD}" ssh ${SSH_OPTS} "${VPS_USER}@${VPS_HOST}" \
+            "cd '${APP_DIR}' && \
+             export FRONTEND_PORT='${FRONTEND_PORT}' FRONTEND_CONTAINER_NAME='${FRONTEND_CONTAINER_NAME}' && \
+             echo '${GHCR_TOKEN}' | docker login ghcr.io -u '${GHCR_USER}' --password-stdin && \
+             docker compose -p '${PROJECT_NAME}' pull && \
+             docker compose -p '${PROJECT_NAME}' up -d && \
+             docker image prune -f && \
+             docker compose -p '${PROJECT_NAME}' ps"
