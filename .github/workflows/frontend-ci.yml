@@ -5,9 +5,6 @@ on:
     branches:
       - main
       - development
-  pull_request:
-    branches:
-      - development
   workflow_dispatch:
 
 env:
@@ -43,41 +40,54 @@ jobs:
     permissions:
       contents: read
       packages: write
+    environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Set deploy metadata
+        id: meta
+        run: |
+          GHCR_OWNER="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            DEPLOY_ENV="production"
+            FRONTEND_PORT="4000"
+            APP_DIR="${{ vars.VPS_FRONTEND_PATH || '/opt/FitPilot-frontend' }}"
+          else
+            DEPLOY_ENV="development"
+            FRONTEND_PORT="6000"
+            APP_DIR="${{ vars.VPS_FRONTEND_PATH_DEV || vars.VPS_FRONTEND_PATH || '/opt/development/FitPilot-frontend' }}"
+          fi
+
+          echo "ghcr_owner=$GHCR_OWNER" >> "$GITHUB_OUTPUT"
+          echo "image_name=ghcr.io/$GHCR_OWNER/fitpilot-frontend" >> "$GITHUB_OUTPUT"
+          echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+          echo "frontend_port=$FRONTEND_PORT" >> "$GITHUB_OUTPUT"
+          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$DEPLOY_ENV-latest" >> "$GITHUB_OUTPUT"
+          echo "container_name=fitpilot-frontend-$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+          echo "project_name=fitpilot-frontend-$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ steps.meta.outputs.ghcr_owner }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/fitpilot-frontend
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and optionally push Docker image
+      - name: Build & Push (frontend image)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.ghcr_owner }}/fitpilot-frontend:${{ steps.meta.outputs.image_tag }}
+            ghcr.io/${{ steps.meta.outputs.ghcr_owner }}/fitpilot-frontend:${{ github.sha }}
           build-args: |
             VITE_NUTRITION_API_URL=${{ env.VITE_NUTRITION_API_URL }}
             VITE_TRAINING_API_URL=${{ env.VITE_TRAINING_API_URL }}
@@ -102,36 +112,68 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p "$PORT" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
+      - name: Set deploy metadata (again, for this job)
+        id: meta
+        run: |
+          GHCR_OWNER="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            DEPLOY_ENV="production"
+            FRONTEND_PORT="4000"
+            APP_DIR="${{ vars.VPS_FRONTEND_PATH || '/opt/FitPilot-frontend' }}"
+          else
+            DEPLOY_ENV="development"
+            FRONTEND_PORT="6000"
+            APP_DIR="${{ vars.VPS_FRONTEND_PATH_DEV || vars.VPS_FRONTEND_PATH || '/opt/development/FitPilot-frontend' }}"
+          fi
+
+          echo "ghcr_owner=$GHCR_OWNER" >> "$GITHUB_OUTPUT"
+          echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+          echo "frontend_port=$FRONTEND_PORT" >> "$GITHUB_OUTPUT"
+          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$DEPLOY_ENV-latest" >> "$GITHUB_OUTPUT"
+          echo "container_name=fitpilot-frontend-$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+          echo "project_name=fitpilot-frontend-$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+
       - name: Deploy on VPS (password SSH)
         env:
           VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          GHCR_USER: ${{ github.repository_owner }}
+
+          # owner en minúsculas (muy importante para GHCR)
+          GHCR_OWNER: ${{ github.repository_owner }}
           APP_DIR: ${{ vars.VPS_FRONTEND_PATH || '/opt/FitPilot-frontend' }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
+
         run: |
-          set -euo pipefail
+          GHCR_OWNER="$(echo "${GHCR_OWNER}" | tr '[:upper:]' '[:lower:]')"
 
           if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            NODE_ENV="production"
             FRONTEND_PORT="4000"
-            FRONTEND_CONTAINER_NAME="fitpilot-frontend-prod"
-            PROJECT_NAME="fitpilot-frontend-prod"
+            IMAGE_TAG="production-latest"
+            CONTAINER_NAME="fitpilot-frontend-production"
+            PROJECT_NAME="fitpilot-frontend-production"
           else
+            NODE_ENV="development"
             FRONTEND_PORT="6000"
-            FRONTEND_CONTAINER_NAME="fitpilot-frontend-dev"
-            PROJECT_NAME="fitpilot-frontend-dev"
+            IMAGE_TAG="development-latest"
+            CONTAINER_NAME="fitpilot-frontend-development"
+            PROJECT_NAME="fitpilot-frontend-development"
           fi
 
-          PORT="${VPS_PORT:-22}"
-          SSH_OPTS="-p ${PORT} -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          PORT="${{ secrets.VPS_PORT }}"
+          if [ -z "$PORT" ]; then PORT=22; fi
 
-          sshpass -p "${VPS_PASSWORD}" ssh ${SSH_OPTS} "${VPS_USER}@${VPS_HOST}" \
-            "cd '${APP_DIR}' && \
-             export FRONTEND_PORT='${FRONTEND_PORT}' FRONTEND_CONTAINER_NAME='${FRONTEND_CONTAINER_NAME}' && \
-             echo '${GHCR_TOKEN}' | docker login ghcr.io -u '${GHCR_USER}' --password-stdin && \
-             docker compose -p '${PROJECT_NAME}' pull && \
-             docker compose -p '${PROJECT_NAME}' up -d && \
-             docker image prune -f && \
-             docker compose -p '${PROJECT_NAME}' ps"
+          sshpass -p "$VPS_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=yes \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << EOF
+          set -e
+          cd "$APP_DIR"
+
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
+
+          GHCR_OWNER="$GHCR_OWNER" IMAGE_TAG="$IMAGE_TAG" CONTAINER_NAME="$CONTAINER_NAME" NODE_ENV="$NODE_ENV" FRONTEND_PORT="$FRONTEND_PORT" docker compose -p "$PROJECT_NAME" pull
+          docker rm -f "$CONTAINER_NAME" || true
+          GHCR_OWNER="$GHCR_OWNER" IMAGE_TAG="$IMAGE_TAG" CONTAINER_NAME="$CONTAINER_NAME" NODE_ENV="$NODE_ENV" FRONTEND_PORT="$FRONTEND_PORT" docker compose -p "$PROJECT_NAME" up -d
+          docker image prune -f
+          GHCR_OWNER="$GHCR_OWNER" IMAGE_TAG="$IMAGE_TAG" CONTAINER_NAME="$CONTAINER_NAME" NODE_ENV="$NODE_ENV" FRONTEND_PORT="$FRONTEND_PORT" docker compose -p "$PROJECT_NAME" ps
+          EOF
