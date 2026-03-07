@@ -39,6 +39,10 @@ export function RegisterPage() {
         confirmPassword !== '' &&
         password === confirmPassword &&
         isPhoneVerified;
+    const showPasswordMismatch =
+        password.length > 0 &&
+        confirmPassword.length > 0 &&
+        password !== confirmPassword;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -141,9 +145,9 @@ export function RegisterPage() {
     };
 
     return (
-        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col md:flex-row min-h-[600px]">
+        <div className="bg-white rounded-4xl shadow-2xl overflow-hidden max-w-4xl w-full flex flex-col md:flex-row min-h-[500px]">
             {/* Left Side - Brand & Visuals */}
-            <div className="relative w-full md:w-1/2 bg-linear-to-br from-[#182F50] via-[#1D3A63] to-[#12243D] p-12 text-white overflow-hidden flex flex-col justify-between">
+            <div className="relative w-full md:w-1/2 bg-linear-to-br from-[#182F50] via-[#1D3A63] to-[#12243D] p-10 text-white overflow-hidden flex flex-col justify-between">
                 {/* Background Decor */}
                 <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#2B568D]/25 rounded-full blur-[100px]" />
@@ -217,7 +221,7 @@ export function RegisterPage() {
             </div>
 
             {/* Right Side - Register Form */}
-            <div className="w-full md:w-1/2 p-8 md:p-12 bg-white flex flex-col justify-center">
+            <div className="w-full md:w-1/2 p-6 md:p-10 bg-white flex flex-col justify-center">
                 <div className="max-w-md mx-auto w-full">
                     <div className="mb-8">
                         <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('pages.register.title')}</h1>
@@ -307,8 +311,9 @@ export function RegisterPage() {
                                     icon={<Lock className="w-5 h-5" />}
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
+                                    error={showPasswordMismatch ? t('pages.register.passwordsDoNotMatch') : undefined}
                                 />
-                                {password && confirmPassword && password === confirmPassword && (
+                                {!showPasswordMismatch && password && confirmPassword && password === confirmPassword && (
                                     <p className="text-xs text-green-600 font-medium pl-1">
                                         {`✓ ${t('pages.register.passwordsMatch')}`}
                                     </p>
@@ -318,7 +323,7 @@ export function RegisterPage() {
 
                         <Button 
                             type="submit" 
-                            className="w-full !bg-none !bg-[#67B5DE] hover:!bg-[#4FA5D2] focus:!ring-[#67B5DE] !shadow-[#67B5DE]/25 hover:!shadow-[#67B5DE]/35"
+                            className="w-full bg-none! bg-[#67B5DE]! hover:bg-[#4FA5D2]! focus:ring-[#67B5DE]! shadow-[#67B5DE]/25! hover:shadow-[#67B5DE]/35!"
                             isLoading={signupMutation.isPending}
                             disabled={!isFormValid || signupMutation.isPending}
                         >

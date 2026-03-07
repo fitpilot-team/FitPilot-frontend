@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/newAuthStore";
+import { useLanguageStore } from "@/store/languageStore";
 
 type CreateClientConfig = {
   baseURL: string;
@@ -102,10 +103,16 @@ export const createClient = ({ baseURL }: CreateClientConfig): AxiosInstance => 
 
   client.interceptors.request.use((config) => {
     const token = useAuthStore.getState().token;
+    const language = useLanguageStore.getState().language;
     config.withCredentials = true;
 
+    config.headers = config.headers ?? {};
+    if (language) {
+      config.headers["x-lang"] = language;
+      config.headers["Accept-Language"] = language;
+    }
+
     if (token) {
-      config.headers = config.headers ?? {};
       config.headers.Authorization = `Bearer ${token}`;
     }
 
