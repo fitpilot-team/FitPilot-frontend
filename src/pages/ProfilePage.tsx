@@ -570,7 +570,7 @@ export function ProfilePage() {
                     className={`w-full rounded-lg py-2.5 text-sm font-medium leading-5 ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2
                         ${activeTab === 'personal'
                             ? 'bg-white text-blue-700 shadow'
-                            : 'text-gray-500 hover:bg-white/12 hover:text-white'
+                            : 'text-gray-500 hover:bg-white hover:text-blue-700'
                         }`}
                 >
                     <div className="flex items-center justify-center gap-2">
@@ -583,7 +583,7 @@ export function ProfilePage() {
                     className={`w-full rounded-lg py-2.5 text-sm font-medium leading-5 ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2
                         ${activeTab === 'professional'
                             ? 'bg-white text-blue-700 shadow'
-                            : 'text-gray-500 hover:bg-white/12 hover:text-white'
+                            : 'text-gray-500 hover:bg-white hover:text-blue-700'
                         }`}
                 >
                     <div className="flex items-center justify-center gap-2">
@@ -596,7 +596,7 @@ export function ProfilePage() {
                     className={`w-full rounded-lg py-2.5 text-sm font-medium leading-5 ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2
                         ${activeTab === 'sessions'
                             ? 'bg-white text-blue-700 shadow'
-                            : 'text-gray-500 hover:bg-white/12 hover:text-white'
+                            : 'text-gray-500 hover:bg-white hover:text-blue-700'
                         }`}
                 >
                     <div className="flex items-center justify-center gap-2">
