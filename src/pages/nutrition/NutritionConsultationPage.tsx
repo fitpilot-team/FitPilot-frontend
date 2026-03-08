@@ -22,7 +22,7 @@ import { DatePicker } from '@/components/common/DatePicker';
 import { ConsultationProgress } from '@/components/consultation/ConsultationProgress';
 import { ConsultationHistorySidebar } from '@/components/consultation/ConsultationHistorySidebar';
 
-import { useGetAppointments, useStartConsultation, useFinishConsultation, useCreateAppointmentDraft, useUpdateAppointmentDraft, useGetAppointmentDraft } from '@/features/appointments/queries';
+import { useGetAppointments, useStartConsultation, useFinishConsultation, useCreateAppointmentDraft, useUpdateAppointmentDraft, useGetAppointmentDraft, useUpdateAppointment } from '@/features/appointments/queries';
 import { useProfessional } from '@/contexts/ProfessionalContext';
 import { useAuthStore } from '@/store/newAuthStore';
 import { useProfessionalClients } from '@/features/professional-clients/queries';
@@ -43,11 +43,29 @@ export function NutritionConsultationPage() {
     const { user } = useAuthStore();
     const professionalId = professional?.sub || user?.id;
 
-    const { data: appointments, isLoading: isLoadingAppointments } = useGetAppointments(professionalId?.toString() || '');
-    const { data: clients } = useProfessionalClients(professionalId?.toString() || '');
+    const {
+        data: appointments,
+        isLoading: isLoadingAppointments,
+        isError: isAppointmentsError,
+        refetch: refetchAppointments
+    } = useGetAppointments(professionalId?.toString() || '');
+    const {
+        data: clients,
+        isLoading: isLoadingClients,
+        isError: isClientsError
+    } = useProfessionalClients(professionalId?.toString() || '');
 
-    const appointment = appointments?.find(a => a.id.toString() === id);
-    const client = clients?.find(c => Number(c.id) === Number(appointment?.client_id));
+    // Auto-refetch when window gains focus to sync session status across tabs
+    useEffect(() => {
+        const onFocus = () => refetchAppointments();
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, [refetchAppointments]);
+
+    const appointmentsList = Array.isArray(appointments) ? appointments : [];
+    const clientsList = Array.isArray(clients) ? clients : [];
+    const appointment = appointmentsList.find(a => a.id.toString() === id);
+    const client = clientsList.find(c => Number(c.id) === Number(appointment?.client_id));
 
     // Fetch client history for medical conditions
     const { data: clientHistory } = useClientHistory(appointment?.client_id);
@@ -56,10 +74,18 @@ export function NutritionConsultationPage() {
     const hasConditions = medicalConditions && medicalConditions !== 'Ninguna' && medicalConditions.trim() !== '';
 
     // Extract goals
-    const clientGoals = clientHistory?.client_goals?.map(g => g.goals.name).join(', ') || 'Sin objetivos definidos';
+    const clientGoalsList = Array.isArray(clientHistory?.client_goals)
+        ? clientHistory.client_goals
+        : [];
+
+    const clientGoals = clientGoalsList
+        .map(g => g?.goals?.name)
+        .filter(Boolean)
+        .join(', ') || 'Sin objetivos definidos';
 
     // Calculate Last Session
-    const clientAppointments = appointments?.filter(a => Number(a.client_id) === Number(appointment?.client_id)) || [];
+    const clientAppointments =
+        appointmentsList.filter(a => Number(a.client_id) === Number(appointment?.client_id));
     
     // Filter for past appointments (excluding current one if needed, or just previous dates)
     // Assuming status 'completed' or just date check. Let's use date check and exclude current.
@@ -72,7 +98,13 @@ export function NutritionConsultationPage() {
         .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
 
     const [seconds, setSeconds] = useState(0);
-    const [isActive, setIsActive] = useState(true);
+    const [isActive, setIsActive] = useState(false);
+    const [pauseStartedAt, setPauseStartedAt] = useState<string | null>(null);
+    const [pauseCount, setPauseCount] = useState(0);
+    const [totalPausedSeconds, setTotalPausedSeconds] = useState(0);
+    const sessionEventsRef = useRef<Array<Record<string, any>>>([]);
+    const autoResumedAppointmentIdRef = useRef<number | null>(null);
+    const autoStartedAppointmentIdRef = useRef<number | null>(null);
     // Notes Sections State
     const [noteSections, setNoteSections] = useState({
         motivo: '',
@@ -84,6 +116,17 @@ export function NutritionConsultationPage() {
     const [activeSection, setActiveSection] = useState<keyof typeof noteSections | null>(null);
     const [isTimerExpanded, setIsTimerExpanded] = useState(false);
     const [showEndConfirmation, setShowEndConfirmation] = useState(false);
+    
+    // Toast notification state
+    const [showWarningToast, setShowWarningToast] = useState(false);
+    const [warningMessage, setWarningMessage] = useState('');
+
+    useEffect(() => {
+        if (showWarningToast) {
+            const timer = setTimeout(() => setShowWarningToast(false), 4000);
+            return () => clearTimeout(timer);
+        }
+    }, [showWarningToast]);
 
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [historyViewed] = useState(false);
@@ -115,6 +158,7 @@ export function NutritionConsultationPage() {
 
     const startMutation = useStartConsultation();
     const finishMutation = useFinishConsultation();
+    const updateAppointmentMutation = useUpdateAppointment();
     const saveMetricMutation = useSaveClientMetric();
     const createDraftMutation = useCreateAppointmentDraft();
     const updateDraftMutation = useUpdateAppointmentDraft();
@@ -183,16 +227,22 @@ export function NutritionConsultationPage() {
 
 
     // Plan Duration State
-    const activeGoal = clientHistory?.client_goals?.find(g => g.is_primary) || clientHistory?.client_goals?.[0]; // Added activeGoal logic
+    const activeGoal =
+        clientGoalsList.find(g => g?.is_primary) || clientGoalsList[0];
     const [modalTab, setModalTab] = useState<'history' | 'upcoming'>('history');
     const [selectedAppointmentDate, setSelectedAppointmentDate] = useState<string | null>(null);
     const finishConsultationMutation = finishMutation;
 
     // Effect to recalculate
     useEffect(() => {
-        if (calculatedTdee > 0 && clientHistory?.client_goals?.length) {
-            const primaryGoal = clientHistory.client_goals.find(g => g.is_primary) || clientHistory.client_goals[0];
-            const goalData = primaryGoal.goals;
+        if (calculatedTdee > 0 && clientGoalsList.length) {
+            const primaryGoal =
+                clientGoalsList.find(g => g?.is_primary) || clientGoalsList[0];
+            const goalData = primaryGoal?.goals;
+
+            if (!goalData) {
+                return;
+            }
             
             let targetCals = calculatedTdee;
 
@@ -228,7 +278,7 @@ export function NutritionConsultationPage() {
                 fats
             });
         }
-    }, [calculatedTdee, clientHistory?.client_goals]);
+    }, [calculatedTdee, clientGoalsList]);
 
     const updateMacro = (type: 'proteins' | 'carbs' | 'fats', delta: number) => {
         setTargetMacros(prev => {
@@ -283,9 +333,16 @@ export function NutritionConsultationPage() {
                     setIsTranscribing(true);
                     transcribeMutation.mutate(audioBlob, {
                         onSuccess: (data) => {
+                            const transcript = (data || '').trim();
+                            if (!transcript) {
+                                setIsTranscribing(false);
+                                setActiveSection(null);
+                                return;
+                            }
+
                             setNoteSections((prev) => ({
                                 ...prev,
-                                [section]: prev[section] + (prev[section] ? ' ' : '') + data
+                                [section]: prev[section] + (prev[section] ? ' ' : '') + transcript
                             }));
                             setIsTranscribing(false);
                             setActiveSection(null);
@@ -322,13 +379,46 @@ export function NutritionConsultationPage() {
 
     // Start consultation automatically if it hasn't started yet
     useEffect(() => {
+        if (!appointment) return;
+        if (appointment.start_date) return;
+        if (startMutation.isPending) return;
+        if (autoStartedAppointmentIdRef.current === appointment.id) return;
+
+        autoStartedAppointmentIdRef.current = appointment.id;
+
         if (appointment && !appointment.start_date && !startMutation.isPending) {
-            startMutation.mutate(appointment.id);
+            const isAnotherSessionActive = appointmentsList.some(
+                a => a.status === 'in_progress' && a.id !== appointment.id
+            );
+
+            if (isAnotherSessionActive) {
+                setWarningMessage('Hay otra sesión en curso. Paúsala o finalízala antes de iniciar esta.');
+                setShowWarningToast(true);
+                return;
+            }
+
+            startMutation.mutate(appointment.id, {
+                onSuccess: (updatedAppointment) => {
+                    setPauseStartedAt(updatedAppointment.paused_at ?? null);
+                    setPauseCount(updatedAppointment.pause_count ?? 0);
+                    setTotalPausedSeconds(updatedAppointment.total_paused_seconds ?? 0);
+                    sessionEventsRef.current = Array.isArray(updatedAppointment.session_events)
+                        ? updatedAppointment.session_events
+                        : [];
+                    setIsActive(updatedAppointment.status === 'in_progress');
+                },
+                onError: () => {
+                    // Allow retry only if start failed.
+                    autoStartedAppointmentIdRef.current = null;
+                },
+            });
         }
-    }, [appointment?.id, appointment?.start_date]);
+    }, [appointment?.id, appointment?.start_date, startMutation.isPending]);
 
     // Draft Retrieval and Creation Logic
-    const { data: existingDraft, isLoading: isLoadingDraft } = useGetAppointmentDraft(Number(id));
+    const parsedAppointmentId = Number(id);
+    const appointmentId = Number.isFinite(parsedAppointmentId) ? parsedAppointmentId : 0;
+    const { data: existingDraft, isLoading: isLoadingDraft } = useGetAppointmentDraft(appointmentId);
 
     // Populate form with existing draft data
     useEffect(() => {
@@ -342,7 +432,6 @@ export function NutritionConsultationPage() {
                 if (state.noteSections) setNoteSections(state.noteSections);
                 if (state.metrics) setMetrics(state.metrics);
                 if (state.targetMacros) setTargetMacros(state.targetMacros);
-                if (state.seconds) setSeconds(state.seconds);
 
             } else {
                 // Fallback to legacy fields
@@ -465,7 +554,8 @@ export function NutritionConsultationPage() {
                         stage: view,
                         noteSections,
                         metrics, // Saving raw metrics state strings to preserve input state
-                        targetMacros
+                        targetMacros,
+                        seconds: stateRef.current.seconds
                     }
                 }
             });
@@ -492,6 +582,55 @@ export function NutritionConsultationPage() {
             seconds
         };
     }, [view, noteSections, metrics, targetMacros, seconds]);
+
+    useEffect(() => {
+        if (!appointment) return;
+
+        setPauseStartedAt(appointment.paused_at ?? null);
+        setPauseCount(appointment.pause_count ?? 0);
+        setTotalPausedSeconds(appointment.total_paused_seconds ?? 0);
+        sessionEventsRef.current = Array.isArray(appointment.session_events)
+            ? appointment.session_events
+            : [];
+
+        // Calculate correct seconds based on elapsed time if it has started
+        if (appointment.start_date && appointment.status !== 'completed' && appointment.status !== 'cancelled') {
+            const now = new Date();
+            const start = new Date(appointment.start_date);
+            let elapsed = Math.floor((now.getTime() - start.getTime()) / 1000);
+            
+            elapsed -= (appointment.total_paused_seconds ?? 0);
+            
+            if (appointment.status === 'paused' && appointment.paused_at) {
+                const pauseTime = Math.floor((now.getTime() - new Date(appointment.paused_at).getTime()) / 1000);
+                elapsed -= Math.max(0, pauseTime);
+            }
+            
+            setSeconds(Math.max(0, elapsed));
+        }
+
+        setIsActive(appointment.status === 'in_progress');
+    }, [
+        appointment?.id,
+        appointment?.status,
+        appointment?.start_date,
+        appointment?.end_date,
+        appointment?.paused_at,
+        appointment?.pause_count,
+        appointment?.total_paused_seconds,
+        appointment?.session_events,
+    ]);
+
+    const appendSessionEvent = (eventType: 'pause' | 'resume' | 'end') => {
+        const event = {
+            type: eventType,
+            at: new Date().toISOString(),
+            timer_seconds: stateRef.current.seconds,
+        };
+        const nextEvents = [...sessionEventsRef.current, event];
+        sessionEventsRef.current = nextEvents;
+        return nextEvents;
+    };
 
     const saveDraft = () => {
         if (!appointment?.id) return;
@@ -537,6 +676,76 @@ export function NutritionConsultationPage() {
         });
     };
 
+    const handleToggleTimer = () => {
+        if (!appointment?.id || updateAppointmentMutation.isPending) return;
+
+        if (isActive) {
+            const pausedAt = new Date().toISOString();
+            const nextPauseCount = pauseCount + 1;
+            const nextEvents = appendSessionEvent('pause');
+
+            setIsActive(false);
+            setPauseStartedAt(pausedAt);
+            setPauseCount(nextPauseCount);
+
+            updateAppointmentMutation.mutate({
+                id: appointment.id,
+                data: {
+                    status: 'paused',
+                    paused_at: pausedAt,
+                    pause_count: nextPauseCount,
+                    total_paused_seconds: totalPausedSeconds,
+                    session_events: nextEvents,
+                },
+            });
+
+            saveDraft();
+            return;
+        }
+
+        const isAnotherSessionActive = appointmentsList.some(
+            a => a.status === 'in_progress' && a.id !== appointment.id
+        );
+
+        if (isAnotherSessionActive) {
+            setWarningMessage('Hay otra sesión en curso. Paúsala o finalízala antes de reanudar esta.');
+            setShowWarningToast(true);
+            return;
+        }
+
+        const resumedAt = new Date().toISOString();
+        const pausedSeconds = pauseStartedAt
+            ? Math.max(
+                0,
+                Math.floor(
+                    (new Date(resumedAt).getTime() - new Date(pauseStartedAt).getTime()) / 1000
+                )
+            )
+            : 0;
+        const nextTotalPausedSeconds = totalPausedSeconds + pausedSeconds;
+        const nextEvents = appendSessionEvent('resume');
+
+        setIsActive(true);
+        setPauseStartedAt(null);
+        setTotalPausedSeconds(nextTotalPausedSeconds);
+
+        updateAppointmentMutation.mutate({
+            id: appointment.id,
+            data: {
+                status: 'in_progress',
+                paused_at: null,
+                last_resumed_at: resumedAt,
+                pause_count: pauseCount,
+                total_paused_seconds: nextTotalPausedSeconds,
+                session_events: nextEvents,
+            },
+        });
+
+        saveDraft();
+    };
+
+
+
     // Timer Tick
     useEffect(() => {
         let interval: any = null;
@@ -550,21 +759,50 @@ export function NutritionConsultationPage() {
         return () => clearInterval(interval);
     }, [isActive]);
 
-    // Timer Sync (every 3 seconds when active)
-    useEffect(() => {
-        let interval: any = null;
-        if (isActive && appointment?.id) {
-            interval = setInterval(() => {
-                saveDraft();
-            }, 3000);
-        }
-        return () => clearInterval(interval);
-    }, [isActive, appointment?.id]);
-
-    // Warning when closing the window/tab
+    // Warning when closing the window/tab and Auto-pausing
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
             if (isActive) {
+                // Prepare a synchronous fallback pause request to prevent infinite timers
+                if (appointment?.id) {
+                    const pausedAt = new Date().toISOString();
+                    const stateEvents = sessionEventsRef.current;
+                    const evt = {
+                        type: 'pause',
+                        at: pausedAt,
+                        timer_seconds: seconds,
+                    };
+
+                    const payload = {
+                        status: 'paused',
+                        paused_at: pausedAt,
+                        total_paused_seconds: totalPausedSeconds,
+                        pause_count: pauseCount + 1,
+                        session_events: [...stateEvents, evt],
+                    };
+
+                    // Use fetch with keepalive strictly for unload events
+                    try {
+                        const token = useAuthStore.getState().token || '';
+                        const headers = new Headers();
+                        headers.append("Content-Type", "application/json");
+                        if (token) {
+                            headers.append("Authorization", `Bearer ${token}`);
+                        }
+                        
+                        // Enforce withCredentials equivalence for fetch
+                        fetch(`${import.meta.env.VITE_NUTRITION_API_URL}/v1/appointments/${appointment.id}`, {
+                            method: 'PATCH',
+                            headers: headers,
+                            keepalive: true,
+                            credentials: 'include',
+                            body: JSON.stringify(payload)
+                        });
+                    } catch (err) {
+                        console.error("Failed to auto-pause on unload", err);
+                    }
+                }
+
                 e.preventDefault();
                 e.returnValue = ''; 
             }
@@ -572,8 +810,132 @@ export function NutritionConsultationPage() {
 
         window.addEventListener('beforeunload', handleBeforeUnload);
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-    }, [isActive]);
+    }, [isActive, appointment?.id, pauseCount, seconds]);
 
+
+    // Unmount auto-pause (SPA Navigation)
+    const stateRefs = useRef({
+        appointmentId: appointment?.id,
+        isActive,
+        seconds,
+        totalPausedSeconds,
+        pauseCount,
+        sessionEvents: sessionEventsRef.current
+    });
+
+    useEffect(() => {
+        stateRefs.current = {
+            appointmentId: appointment?.id,
+            isActive,
+            seconds,
+            totalPausedSeconds,
+            pauseCount,
+            sessionEvents: sessionEventsRef.current
+        };
+    }, [appointment?.id, isActive, seconds, totalPausedSeconds, pauseCount]);
+
+    useEffect(() => {
+        return () => {
+            const state = stateRefs.current;
+            if (state.isActive && state.appointmentId) {
+                try {
+                    const pausedAt = new Date().toISOString();
+                    const evt = {
+                        type: 'pause',
+                        at: pausedAt,
+                        timer_seconds: state.seconds,
+                    };
+                    
+                    const payload = {
+                        status: 'paused',
+                        paused_at: pausedAt,
+                        total_paused_seconds: state.totalPausedSeconds,
+                        pause_count: state.pauseCount + 1,
+                        session_events: [...state.sessionEvents, evt],
+                    };
+                    const token = useAuthStore.getState().token || '';
+                    const headers = new Headers();
+                    headers.append("Content-Type", "application/json");
+                    if (token) {
+                        headers.append("Authorization", `Bearer ${token}`);
+                    }
+                    
+                    fetch(`${import.meta.env.VITE_NUTRITION_API_URL}/v1/appointments/${state.appointmentId}`, {
+                        method: 'PATCH',
+                        headers: headers,
+                        keepalive: true,
+                        credentials: 'include',
+                        body: JSON.stringify(payload)
+                    });
+                } catch (err) {
+                    console.error("Failed to auto-pause on unmount", err);
+                }
+            }
+        };
+    }, []);
+
+    // Auto-resume on enter if paused
+    useEffect(() => {
+        if (!appointment?.id) return;
+        if (appointment.status !== 'paused') return;
+        if (autoResumedAppointmentIdRef.current === appointment.id) return;
+
+        autoResumedAppointmentIdRef.current = appointment.id;
+
+        const isAnotherSessionActive = appointmentsList.some(
+            a => a.status === 'in_progress' && a.id !== appointment.id
+        );
+
+        if (isAnotherSessionActive) {
+            setWarningMessage('Hay otra sesión en curso. Paúsala o finalízala antes de reanudar esta.');
+            setShowWarningToast(true);
+            return;
+        }
+
+        const resumedAt = new Date().toISOString();
+        const initialPausedAt = appointment.paused_at;
+        const initialTotalPausedSeconds = appointment.total_paused_seconds ?? 0;
+        
+        const pausedSeconds = initialPausedAt
+            ? Math.max(
+                0,
+                Math.floor(
+                    (new Date(resumedAt).getTime() - new Date(initialPausedAt).getTime()) / 1000
+                )
+            )
+            : 0;
+        const nextTotalPausedSeconds = initialTotalPausedSeconds + pausedSeconds;
+        const resumeEvent = {
+            type: 'resume',
+            at: resumedAt,
+            timer_seconds: seconds,
+        };
+        const nextEvents = [...sessionEventsRef.current, resumeEvent];
+        sessionEventsRef.current = nextEvents;
+
+        setPauseStartedAt(null);
+        setTotalPausedSeconds(nextTotalPausedSeconds);
+        setIsActive(true);
+
+        updateAppointmentMutation.mutate({
+            id: appointment.id,
+            data: {
+                status: 'in_progress',
+                paused_at: null,
+                last_resumed_at: resumedAt,
+                pause_count: appointment.pause_count ?? 0,
+                total_paused_seconds: nextTotalPausedSeconds,
+                session_events: nextEvents,
+            },
+        });
+    }, [
+        appointment?.id,
+        appointment?.status,
+        appointment?.paused_at,
+        appointment?.total_paused_seconds,
+        appointment?.pause_count,
+        seconds
+    ]);
 
     const formatTime = (totalSeconds: number) => {
         const hrs = Math.floor(totalSeconds / 3600);
@@ -598,12 +960,29 @@ export function NutritionConsultationPage() {
         }, 3000);
     };
 
-    if (!professionalId || isLoadingAppointments) {
+    if (!professionalId || isLoadingAppointments || isLoadingClients) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <div className="w-12 h-12 border-4 border-nutrition-200 border-t-nutrition-600 rounded-full animate-spin" />
                     <p className="text-gray-500 font-medium tracking-wide">Iniciando consulta...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (isAppointmentsError || isClientsError) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                    <p className="text-gray-900 font-bold text-xl mb-2">No se pudo iniciar la consulta</p>
+                    <p className="text-gray-500 text-sm mb-4">Ocurrió un error cargando la información.</p>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="px-6 py-2 bg-nutrition-600 text-white rounded-xl shadow-lg"
+                    >
+                        Reintentar
+                    </button>
                 </div>
             </div>
         );
@@ -627,6 +1006,19 @@ export function NutritionConsultationPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 pb-12">
+            <AnimatePresence>
+                {showWarningToast && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3"
+                    >
+                        <AlertCircle className="w-5 h-5 shrink-0" />
+                        <span className="font-medium">{warningMessage}</span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
             {/* Header / Top Bar */}
             <header className="bg-white/80 border-b border-gray-100 sticky top-0 z-30 px-6 py-4 shadow-sm backdrop-blur-md">
                 <div className="w-full mx-auto flex items-center justify-between">
@@ -678,7 +1070,7 @@ export function NutritionConsultationPage() {
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setIsActive(!isActive);
+                                                    handleToggleTimer();
                                                 }}
                                                 className="p-1.5 rounded-full hover:bg-gray-100 text-gray-600 transition-colors"
                                                 title={isActive ? "Pausar" : "Reanudar"}
@@ -710,22 +1102,37 @@ export function NutritionConsultationPage() {
                                 </AnimatePresence>
                             </motion.div>
 
-                            {/* Prolonged Consultation Badge */}
+                            {/* Prolonged Consultation Badge or Paused Info */}
                             <AnimatePresence>
-                                {seconds >= 1800 && (
+                                {!isActive && appointment && (appointment.status === 'in_progress' || appointment.status === 'paused') ? (
                                     <motion.div
                                         initial={{ opacity: 0, y: -10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -10 }}
                                         className="absolute top-full left-0 right-0 mt-2 flex justify-center"
                                     >
-                                        <div className="bg-orange-50 border border-orange-100 px-3 py-1 rounded-full flex items-center gap-2 shadow-sm whitespace-nowrap">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
-                                            <span className="text-[10px] font-bold text-orange-700 uppercase tracking-wide">
-                                                Consulta prolongada » {Math.floor(seconds / 60)} min
+                                        <div className="bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-sm whitespace-nowrap">
+                                            <span className="text-[10px] font-medium text-gray-500 max-w-[150px] whitespace-normal text-center leading-tight">
+                                                Puedes abandonar esta pantalla y reanudar la consulta más tarde.
                                             </span>
                                         </div>
                                     </motion.div>
+                                ) : (
+                                    seconds >= 1800 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="absolute top-full left-0 right-0 mt-2 flex justify-center"
+                                        >
+                                            <div className="bg-orange-50 border border-orange-100 px-3 py-1 rounded-full flex items-center gap-2 shadow-sm whitespace-nowrap">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                                                <span className="text-[10px] font-bold text-orange-700 uppercase tracking-wide">
+                                                    Consulta prolongada » {Math.floor(seconds / 60)} min
+                                                </span>
+                                            </div>
+                                        </motion.div>
+                                    )
                                 )}
                             </AnimatePresence>
                         </div>
@@ -1244,9 +1651,9 @@ export function NutritionConsultationPage() {
                                                 <p className="text-[10px] text-nutrition-500 font-medium">
                                                     TDEE: {calculatedTdee}
                                                 </p>
-                                                {activeGoal && (
+                                                {activeGoal?.goals && (
                                                     <div className={`px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 ${
-                                                        (activeGoal.goals.adjustment_value || 0) > 0 
+                                                        (activeGoal.goals.adjustment_value || 0) > 0
                                                         ? 'bg-blue-100 text-blue-700' 
                                                         : 'bg-orange-100 text-orange-700'
                                                     }`}>
@@ -1270,7 +1677,7 @@ export function NutritionConsultationPage() {
                                                 <span className="font-bold">{calculatedTdee} kcal</span>
                                             </div>
                                             
-                                            {activeGoal ? (
+                                            {activeGoal?.goals ? (
                                                 <>
                                                     <div className="flex justify-between items-center">
                                                         <span>Ajuste por Objetivo ({activeGoal.goals.name}):</span>
@@ -1357,13 +1764,35 @@ export function NutritionConsultationPage() {
                                 </button>
                                 <button
                                     onClick={() => {
+                                        const endPausedSeconds = pauseStartedAt
+                                            ? Math.max(
+                                                0,
+                                                Math.floor(
+                                                    (Date.now() - new Date(pauseStartedAt).getTime()) / 1000
+                                                )
+                                            )
+                                            : 0;
+                                        const finalTotalPausedSeconds = totalPausedSeconds + endPausedSeconds;
+                                        const nextEvents = appendSessionEvent('end');
+
                                         finishConsultationMutation.mutate({ 
                                             id: Number(appointment.id), 
                                             durationSeconds: seconds,
                                             notes: Object.entries(noteSections)
                                                 .map(([key, value]) => `${key.toUpperCase()}: ${value}`)
-                                                .join('\n\n')
+                                                .join('\n\n'),
+                                            sessionEvents: nextEvents,
+                                            totalPausedSeconds: finalTotalPausedSeconds,
+                                            pauseCount: pauseCount,
+                                        }, {
+                                            onSuccess: () => {
+                                                navigate('/nutrition/agenda');
+                                            }
                                         });
+                                        setTotalPausedSeconds(finalTotalPausedSeconds);
+                                        setPauseStartedAt(null);
+                                        setIsActive(false);
+                                        saveDraft();
                                         setShowEndConfirmation(false);
                                     }}
                                     className="flex-1 py-3.5 rounded-2xl bg-red-500 text-white font-bold shadow-lg shadow-red-200 hover:bg-red-600 transition-colors"

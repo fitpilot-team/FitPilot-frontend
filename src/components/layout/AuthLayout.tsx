@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { useOutlet, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { LanguageSelector } from "./LanguageSelector";
 import { AnimatedMolecularBackground } from "./AnimatedMolecularBackground";
@@ -10,6 +10,7 @@ const USE_ANIMATED_BACKGROUND = true;
 
 export function AuthLayout() {
     const location = useLocation();
+    const element = useOutlet();
 
     return (
         <div className="min-h-screen w-full bg-gray-100 relative flex items-center justify-center p-4 overflow-hidden">
@@ -45,7 +46,7 @@ export function AuthLayout() {
                     transition={{ duration: 0.3, ease: "easeOut" }}
                     className="relative z-10 w-full flex justify-center"
                 >
-                    <Outlet />
+                    {element}
                 </motion.div>
             </AnimatePresence>
         </div>
