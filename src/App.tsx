@@ -270,7 +270,17 @@ function App() {
         />
 
 
-        {/* Nutrition Routes */}
+        {/* Standalone Consultation Route (New Tab, Full Screen) */}
+        <Route
+          path="/nutrition/consultation/:id"
+          element={
+            <ProtectedRoute requiredAccess="nutrition">
+              <NutritionConsultationPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Nutrition Routes (With Layout) */}
         <Route
           path="/nutrition"
           element={
@@ -301,14 +311,7 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="consultation/:id"
-            element={
-              <ProtectedRoute requiredAccess="nutrition">
-                <NutritionConsultationPage />
-              </ProtectedRoute>
-            }
-          />
+
           <Route
             path="meal-plans"
             element={
