@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
     format,
     startOfMonth,
@@ -75,7 +74,6 @@ const formatDuration = (seconds: number) => {
 export function NutritionAgendaPage() {
     const { user } = useAuthStore();
     const { professional } = useProfessional();
-    const navigate = useNavigate();
 
     // Use professional ID from context or fallback
     const professionalId = professional?.sub || user?.id;

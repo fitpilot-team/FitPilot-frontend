@@ -758,7 +758,6 @@ export function ProfilePage() {
                                         imageUrl={displayProfilePicture}
                                         onSave={handleSaveProfilePicture}
                                         isSaving={isUploadingPicture}
-                                        previewMode="overlay"
                                     />
                                     <h3 className="text-lg font-bold text-gray-900">{displayFirstName} {displayLastName}</h3>
                                     <span className="inline-flex mt-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100 uppercase tracking-wide">

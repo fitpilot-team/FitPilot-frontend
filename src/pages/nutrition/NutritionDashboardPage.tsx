@@ -29,7 +29,6 @@ import { useAuthStore } from '@/store/newAuthStore';
 import { useProfessionalClients } from '@/features/professional-clients/queries';
 import { useProfessional } from '@/contexts/ProfessionalContext';
 import { useGetAppointments } from '@/features/appointments/queries';
-import { useQueryClient } from '@tanstack/react-query';
 import { DraftsSection } from './components/DraftsSection';
 import { Card } from '@/components/common/Card';
 
