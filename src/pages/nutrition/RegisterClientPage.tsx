@@ -9,6 +9,8 @@ import { ChevronLeft, CheckCircle, Smartphone, AlertTriangle } from 'lucide-reac
 import toast from 'react-hot-toast';
 import { useProfessional } from '@/contexts/ProfessionalContext';
 import { resolvePlanAccess } from '@/features/subscriptions/planAccess';
+import { normalizePhoneToE164 } from '@/utils/phone';
+import { getApiErrorMessage } from '@/utils/apiError';
 
 export function RegisterClientPage() {
     const navigate = useNavigate();
@@ -45,12 +47,45 @@ export function RegisterClientPage() {
 
     const [errors, setErrors] = useState<Record<string, string>>({});
 
+    const normalizeAndValidatePhone = (rawPhone: string) => {
+        const normalizedPhone = normalizePhoneToE164(rawPhone);
+
+        if (!normalizedPhone) {
+            setErrors((previousErrors) => ({
+                ...previousErrors,
+                phone_number: 'El telefono debe estar en formato E.164 (ej. +5218114684648)',
+            }));
+            return null;
+        }
+
+        setErrors((previousErrors) => {
+            if (!previousErrors.phone_number) return previousErrors;
+
+            const { phone_number, ...restErrors } = previousErrors;
+            return restErrors;
+        });
+
+        if (normalizedPhone !== rawPhone) {
+            setFormData((previousData) => ({
+                ...previousData,
+                phone_number: normalizedPhone,
+            }));
+        }
+
+        return normalizedPhone;
+    };
+
     const validateForm = () => {
         const newErrors: Record<string, string> = {};
         if (!formData.name) newErrors.name = 'El nombre es requerido';
         if (!formData.lastname) newErrors.lastname = 'Los apellidos son requeridos';
-        if (!formData.phone_number) newErrors.phone_number = 'El teléfono es requerido';
-        
+
+        if (!formData.phone_number) {
+            newErrors.phone_number = 'El telefono es requerido';
+        } else if (!normalizePhoneToE164(formData.phone_number)) {
+            newErrors.phone_number = 'El telefono debe estar en formato E.164 (ej. +5218114684648)';
+        }
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -58,20 +93,24 @@ export function RegisterClientPage() {
 
     const handleVerifyPhone = async () => {
         if (!formData.phone_number) {
-            toast.error('Ingrese un número de teléfono primero');
+            toast.error('Ingresa un telefono primero');
             return;
         }
+
+        const normalizedPhone = normalizeAndValidatePhone(formData.phone_number);
+        if (!normalizedPhone) return;
+
         try {
-            const result = await validatePhone(formData.phone_number);
+            const result = await validatePhone(normalizedPhone);
             if (result.isValid) {
                 setIsPhoneVerified(true);
-                toast.success('Teléfono validado correctamente');
+                toast.success('Telefono validado correctamente');
             } else {
-                toast.error('El número de teléfono no es válido');
+                toast.error('El numero de telefono no es valido');
             }
-        } catch (error: any) {
+        } catch (error) {
             console.error(error);
-            toast.error(error.message || 'Error al validar el teléfono');
+            toast.error(getApiErrorMessage(error) || 'Error al validar el telefono');
         }
     };
 
@@ -100,8 +139,12 @@ export function RegisterClientPage() {
                 }
             }
 
+            const normalizedPhone = normalizeAndValidatePhone(formData.phone_number);
+            if (!normalizedPhone) return;
+
             await createUser({
                 ...formData,
+                phone_number: normalizedPhone,
                 role: 'CLIENT', // Hidden from user
                 is_active: true,
                 created_at: new Date().toISOString(),
@@ -114,7 +157,7 @@ export function RegisterClientPage() {
             navigate('/nutrition/clients');
         } catch (error) {
             console.error(error);
-            toast.error('Error al registrar el cliente');
+            toast.error(getApiErrorMessage(error) || 'Error al registrar el cliente');
         }
     };
 
@@ -246,3 +289,4 @@ export function RegisterClientPage() {
         </div>
     );
 }
+

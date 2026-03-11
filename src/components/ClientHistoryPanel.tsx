@@ -2,6 +2,7 @@
 import React from 'react';
 
 import { useClientHistory } from '@/features/client-history/queries';
+import { buildClientMetricSnapshot, displayMetricValue } from '@/features/client-history/metricSnapshot';
 import { Heart, ThumbsUp, ThumbsDown, Activity, Info } from 'lucide-react';
 
 interface ClientHistoryPanelProps {
@@ -35,6 +36,8 @@ export const ClientHistoryPanel: React.FC<ClientHistoryPanelProps> = ({ clientId
     }
 
     if (!history) return null;
+
+    const metricSnapshot = buildClientMetricSnapshot(history.client_metrics || []);
 
     // ... existing variable definitions ...
     const record = history.client_records?.[0];
@@ -265,15 +268,21 @@ export const ClientHistoryPanel: React.FC<ClientHistoryPanelProps> = ({ clientId
                                 <>
                                     <div className="flex justify-between text-xs">
                                         <span className="text-gray-500 font-medium group-hover:text-gray-700">Peso</span>
-                                        <span className="font-bold text-gray-700">{history.client_metrics[0].weight_kg || '-'} kg</span>
+                                        <span className="font-bold text-gray-700">
+                                            {metricSnapshot.weight_kg !== null ? `${displayMetricValue(metricSnapshot.weight_kg)} kg` : '-'}
+                                        </span>
                                     </div>
                                     <div className="flex justify-between text-xs">
                                         <span className="text-gray-500 font-medium group-hover:text-gray-700">Altura</span>
-                                        <span className="font-bold text-gray-700">{history.client_metrics[0].height_cm || '-'} cm</span>
+                                        <span className="font-bold text-gray-700">
+                                            {metricSnapshot.height_cm !== null ? `${displayMetricValue(metricSnapshot.height_cm)} cm` : '-'}
+                                        </span>
                                     </div>
                                     <div className="flex justify-between text-xs">
                                         <span className="text-gray-500 font-medium group-hover:text-gray-700">Grasa Corporal</span>
-                                        <span className="font-bold text-gray-700">{history.client_metrics[0].body_fat_pct || '-'} %</span>
+                                        <span className="font-bold text-gray-700">
+                                            {metricSnapshot.body_fat_pct !== null ? `${displayMetricValue(metricSnapshot.body_fat_pct)} %` : '-'}
+                                        </span>
                                     </div>
                                     <div className="text-center mt-2 pt-2 border-t border-purple-200">
                                          <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest">Ver Progreso »</span>

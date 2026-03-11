@@ -3,6 +3,28 @@ import { getMenus, getMenuById, createMenu, updateMenu, deleteMenu, getMenuPool,
 import { toast } from 'react-hot-toast';
 
 const resolveErrorMessage = (error: unknown, fallback: string): string => {
+    if (typeof error === 'object' && error !== null) {
+        const responseData = (error as {
+            response?: {
+                data?: {
+                    message?: string | string[];
+                };
+            };
+        }).response?.data;
+
+        const responseMessage = responseData?.message;
+        if (Array.isArray(responseMessage)) {
+            const message = responseMessage.filter(Boolean).join(', ');
+            if (message.trim()) {
+                return message;
+            }
+        }
+
+        if (typeof responseMessage === 'string' && responseMessage.trim()) {
+            return responseMessage;
+        }
+    }
+
     if (error instanceof Error && error.message) {
         return error.message;
     }

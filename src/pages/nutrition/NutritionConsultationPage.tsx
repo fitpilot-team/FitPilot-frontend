@@ -31,6 +31,7 @@ import { es } from 'date-fns/locale';
 import { ClientHistoryPanel } from '@/components/ClientHistoryPanel';
 import { Modal } from '@/components/common/Modal';
 import { useClientHistory, useSaveClientMetric } from '@/features/client-history/queries';
+import { buildClientMetricSnapshot } from '@/features/client-history/metricSnapshot';
 import { useAudioRecorder } from '@/features/consultation/hooks/useAudioRecorder';
 import { useTranscribeAudio } from '@/features/consultation/queries';
 import { clientInterviewsApi } from '@/services/client-interviews';
@@ -170,6 +171,10 @@ export function NutritionConsultationPage() {
 
     // Fetch client history for medical conditions
     const { data: clientHistory } = useClientHistory(appointment?.client_id);
+    const latestMetricSnapshot = useMemo(
+        () => buildClientMetricSnapshot(clientHistory?.client_metrics || []),
+        [clientHistory?.client_metrics],
+    );
 
     const medicalConditions = clientHistory?.client_records?.[0]?.medical_conditions;
     const hasConditions = medicalConditions && medicalConditions !== 'Ninguna' && medicalConditions.trim() !== '';
@@ -1423,9 +1428,9 @@ export function NutritionConsultationPage() {
                             }}
                             nextGoal={clientGoals}
                             latestMetrics={{
-                                weight: clientHistory?.client_metrics?.[0]?.weight_kg ? Number(clientHistory.client_metrics[0].weight_kg) : undefined,
-                                bodyFat: clientHistory?.client_metrics?.[0]?.body_fat_pct ? Number(clientHistory.client_metrics[0].body_fat_pct) : undefined,
-                                muscleMass: clientHistory?.client_metrics?.[0]?.muscle_mass_kg ? Number(clientHistory.client_metrics[0].muscle_mass_kg) : undefined
+                                weight: latestMetricSnapshot.weight_kg ?? undefined,
+                                bodyFat: latestMetricSnapshot.body_fat_pct ?? undefined,
+                                muscleMass: latestMetricSnapshot.muscle_mass_kg ?? undefined
                             }}
                             onOpenHistory={() => setShowHistoryModal(true)}
                             onOpenGoals={() => {}}
@@ -1775,9 +1780,21 @@ export function NutritionConsultationPage() {
                                 className="bg-white rounded-[40px] shadow-sm border border-gray-100 p-8"
                             >
                                 <TmbCalculator
-                                    weight={Number(metrics.weight) || (clientHistory?.client_metrics?.[0]?.weight_kg ? Number(clientHistory.client_metrics[0].weight_kg) : 0)}
-                                    height={Number(metrics.height) || (clientHistory?.client_metrics?.[0]?.height_cm ? Number(clientHistory.client_metrics[0].height_cm) : 0)}
-                                    bodyFat={Number(metrics.body_fat_pct) || (clientHistory?.client_metrics?.[0]?.body_fat_pct ? Number(clientHistory.client_metrics[0].body_fat_pct) : 0)}
+                                    weight={
+                                        metrics.weight.trim() !== '' && Number.isFinite(Number(metrics.weight))
+                                            ? Number(metrics.weight)
+                                            : (latestMetricSnapshot.weight_kg ?? 0)
+                                    }
+                                    height={
+                                        metrics.height.trim() !== '' && Number.isFinite(Number(metrics.height))
+                                            ? Number(metrics.height)
+                                            : (latestMetricSnapshot.height_cm ?? 0)
+                                    }
+                                    bodyFat={
+                                        metrics.body_fat_pct.trim() !== '' && Number.isFinite(Number(metrics.body_fat_pct))
+                                            ? Number(metrics.body_fat_pct)
+                                            : (latestMetricSnapshot.body_fat_pct ?? 0)
+                                    }
                                     gender={clientHistory?.genre || client?.gender || client?.genre || undefined}
                                     dateOfBirth={client?.date_of_birth}
                                     onTdeeChange={setCalculatedTdee}

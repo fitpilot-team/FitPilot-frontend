@@ -1,6 +1,10 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useClientHistory } from '@/features/client-history/queries';
 import { ClientMetricHistory } from '@/features/client-history/types';
+import {
+    buildClientMetricSnapshot,
+    displayMetricValue,
+} from '@/features/client-history/metricSnapshot';
 import { 
     Ruler, Scale, Activity, HeartPulse, Droplet, 
     AlertCircle, ArrowLeft, TrendingDown, 
@@ -20,7 +24,7 @@ interface Client {
     email: string;
     avatar: string;
     metrics?: {
-        currentWeight: number;
+        currentWeight: number | null;
         weightUnit: string;
         weightChange?: number;
         weightChangeLabel?: string;
@@ -28,14 +32,21 @@ interface Client {
     client_metrics?: ClientMetric[];
     goals?: { name: string; isPrimary: boolean }[];
     medicalConditions?: string;
-    // New measurements
-    chestCm?: number;
-    armLeftCm?: number;
-    armRightCm?: number;
-    thighLeftCm?: number;
-    thighRightCm?: number;
-    calfLeftCm?: number;
-    calfRightCm?: number;
+    heightCm?: number | null;
+    bmi?: number | null;
+    waistCm?: number | null;
+    hipCm?: number | null;
+    chestCm?: number | null;
+    armLeftCm?: number | null;
+    armRightCm?: number | null;
+    thighLeftCm?: number | null;
+    thighRightCm?: number | null;
+    calfLeftCm?: number | null;
+    calfRightCm?: number | null;
+    bodyFatPct?: number | null;
+    muscleMassKg?: number | null;
+    visceralFatLevel?: number | null;
+    waistToHipRatio?: number | null;
     [key: string]: any;
 }
 
@@ -146,6 +157,7 @@ export function NutritionClientMedicalHistoryPage() {
     useEffect(() => {
         if (historyData) {
             const normalizedMetrics = normalizeMetrics(historyData.client_metrics || []);
+            const metricSnapshot = buildClientMetricSnapshot(historyData.client_metrics || []);
             console.log('Normalized Metrics:', normalizedMetrics);
             console.log('Muscle Mass Metrics:', normalizedMetrics.filter(m => m.metric_type === 'muscle_mass'));
             
@@ -179,7 +191,7 @@ export function NutritionClientMedicalHistoryPage() {
                 email: historyData.email,
                 avatar: historyData.profile_picture || `https://ui-avatars.com/api/?name=${historyData.name}+${historyData.lastname}&background=random`,
                 metrics: {
-                    currentWeight: historyData.client_metrics?.[0]?.weight_kg ? parseFloat(historyData.client_metrics[0].weight_kg) : 0,
+                    currentWeight: metricSnapshot.weight_kg,
                     weightUnit: 'kg', // Default or derive from somewhere
                     weightChange: weightChange,
                     weightChangeLabel: weightChangeLabel
@@ -193,22 +205,33 @@ export function NutritionClientMedicalHistoryPage() {
                 })) || [],
                 medicalConditions: historyData.client_records?.[0]?.medical_conditions || '',
                 experienceLevel: 'Intermedio', // Placeholder
-                heightCm: historyData.client_metrics?.[0]?.height_cm ? parseFloat(historyData.client_metrics[0].height_cm) : 0,
+                heightCm: metricSnapshot.height_cm,
                 bmr: 0, // Calculate if possible
                 tdee: 0, // Calculate if possible
-                bmi: 0, // Calculate
-                waistCm: historyData.client_metrics?.[0]?.waist_cm ? parseFloat(historyData.client_metrics[0].waist_cm) : 0,
-                hipCm: historyData.client_metrics?.[0]?.hip_cm ? parseFloat(historyData.client_metrics[0].hip_cm) : 0,
-                chestCm: historyData.client_metrics?.[0]?.chest_cm ? parseFloat(historyData.client_metrics[0].chest_cm) : 0,
-                armLeftCm: historyData.client_metrics?.[0]?.arm_left_cm ? parseFloat(historyData.client_metrics[0].arm_left_cm) : 0,
-                armRightCm: historyData.client_metrics?.[0]?.arm_right_cm ? parseFloat(historyData.client_metrics[0].arm_right_cm) : 0,
-                thighLeftCm: historyData.client_metrics?.[0]?.thigh_left_cm ? parseFloat(historyData.client_metrics[0].thigh_left_cm) : 0,
-                thighRightCm: historyData.client_metrics?.[0]?.thigh_right_cm ? parseFloat(historyData.client_metrics[0].thigh_right_cm) : 0,
-                calfLeftCm: historyData.client_metrics?.[0]?.calf_left_cm ? parseFloat(historyData.client_metrics[0].calf_left_cm) : 0,
-                calfRightCm: historyData.client_metrics?.[0]?.calf_right_cm ? parseFloat(historyData.client_metrics[0].calf_right_cm) : 0,
-                bodyFatPct: historyData.client_metrics?.[0]?.body_fat_pct ? parseFloat(historyData.client_metrics[0].body_fat_pct) : 0,
-                muscleMassKg: historyData.client_metrics?.[0]?.muscle_mass_kg ? parseFloat(historyData.client_metrics[0].muscle_mass_kg) : 0,
-                visceralFatLevel: historyData.client_metrics?.[0]?.visceral_fat ? parseFloat(historyData.client_metrics[0].visceral_fat) : 0,
+                bmi:
+                    metricSnapshot.weight_kg !== null &&
+                    metricSnapshot.height_cm !== null &&
+                    metricSnapshot.height_cm > 0
+                        ? Number(
+                              (
+                                  metricSnapshot.weight_kg /
+                                  Math.pow(metricSnapshot.height_cm / 100, 2)
+                              ).toFixed(1),
+                          )
+                        : null,
+                waistCm: metricSnapshot.waist_cm,
+                hipCm: metricSnapshot.hip_cm,
+                chestCm: metricSnapshot.chest_cm,
+                armLeftCm: metricSnapshot.arm_left_cm,
+                armRightCm: metricSnapshot.arm_right_cm,
+                thighLeftCm: metricSnapshot.thigh_left_cm,
+                thighRightCm: metricSnapshot.thigh_right_cm,
+                calfLeftCm: metricSnapshot.calf_left_cm,
+                calfRightCm: metricSnapshot.calf_right_cm,
+                bodyFatPct: metricSnapshot.body_fat_pct,
+                muscleMassKg: metricSnapshot.muscle_mass_kg,
+                visceralFatLevel: metricSnapshot.visceral_fat,
+                waistToHipRatio: metricSnapshot.waist_to_hip_ratio,
                 injuries: [], // Map if available
                 trainingEnvironment: 'Gimnasio', // Placeholder
                 allergies: historyData.client_allergens?.map(a => a.allergens.name) || [],
@@ -252,7 +275,34 @@ export function NutritionClientMedicalHistoryPage() {
         );
     }
 
-    const visceralColor = client.visceralFatLevel < 10 ? 'bg-green-100 text-green-700' : client.visceralFatLevel < 15 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
+    const formatValueWithUnit = (
+        value: number | null | undefined,
+        unit: string,
+    ): string => {
+        const displayValue = displayMetricValue(value);
+        return displayValue === '-' ? displayValue : `${displayValue} ${unit}`;
+    };
+
+    const formatPairWithUnit = (
+        leftValue: number | null | undefined,
+        rightValue: number | null | undefined,
+        unit: string,
+    ): string => {
+        const left = displayMetricValue(leftValue);
+        const right = displayMetricValue(rightValue);
+        const hasAnyValue = left !== '-' || right !== '-';
+
+        return hasAnyValue ? `${left}/${right} ${unit}` : '-';
+    };
+
+    const hasVisceralMetric = client.visceralFatLevel !== null && client.visceralFatLevel !== undefined;
+    const visceralColor = !hasVisceralMetric
+        ? 'bg-gray-100 text-gray-600'
+        : client.visceralFatLevel! < 10
+            ? 'bg-green-100 text-green-700'
+            : client.visceralFatLevel! < 15
+                ? 'bg-yellow-100 text-yellow-700'
+                : 'bg-red-100 text-red-700';
 
     return (
         <div className="max-w-7xl mx-auto space-y-6 p-6 bg-gray-50 min-h-screen">
@@ -346,8 +396,12 @@ export function NutritionClientMedicalHistoryPage() {
                             >
                                 <p className="text-xs text-gray-500 font-medium mb-1">Peso Actual</p>
                                 <div className="flex items-end gap-2">
-                                    <span className="text-2xl font-bold text-gray-900">{client.metrics?.currentWeight}</span>
-                                    <span className="text-sm text-gray-500 mb-1">{client.metrics?.weightUnit}</span>
+                                    <span className="text-2xl font-bold text-gray-900">
+                                        {displayMetricValue(client.metrics?.currentWeight)}
+                                    </span>
+                                    {client.metrics?.currentWeight !== null && client.metrics?.currentWeight !== undefined && (
+                                        <span className="text-sm text-gray-500 mb-1">{client.metrics?.weightUnit}</span>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-1 mt-2 text-xs font-medium text-slate-600 bg-slate-100 px-2 py-1 rounded-lg w-fit">
                                     <TrendingDown className={`w-3 h-3 ${(client.metrics?.weightChange || 0) > 0 ? 'rotate-180' : ''}`} />
@@ -361,8 +415,10 @@ export function NutritionClientMedicalHistoryPage() {
                              <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                                 <p className="text-xs text-gray-500 font-medium mb-1">Estatura</p>
                                 <div className="flex items-end gap-2">
-                                    <span className="text-2xl font-bold text-gray-900">{client.heightCm}</span>
-                                    <span className="text-sm text-gray-500 mb-1">cm</span>
+                                    <span className="text-2xl font-bold text-gray-900">{displayMetricValue(client.heightCm)}</span>
+                                    {client.heightCm !== null && client.heightCm !== undefined && (
+                                        <span className="text-sm text-gray-500 mb-1">cm</span>
+                                    )}
                                 </div>
                             </div>
 
@@ -370,9 +426,9 @@ export function NutritionClientMedicalHistoryPage() {
                             <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                                 <p className="text-xs text-gray-500 font-medium mb-1">IMC</p>
                                 <div className="flex items-end gap-2">
-                                    <span className="text-2xl font-bold text-gray-900">{client.bmi}</span>
+                                    <span className="text-2xl font-bold text-gray-900">{displayMetricValue(client.bmi)}</span>
                                 </div>
-                                <span className="text-xs text-gray-400">Normal</span>
+                                <span className="text-xs text-gray-400">{client.bmi !== null && client.bmi !== undefined ? 'Normal' : 'Sin dato'}</span>
                             </div>
 
                              {/* Visceral Fat Card */}
@@ -382,9 +438,9 @@ export function NutritionClientMedicalHistoryPage() {
                              >
                                 <p className="text-xs text-gray-500 font-medium mb-1">Grasa Visceral</p>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-2xl font-bold text-gray-900">{client.visceralFatLevel}</span>
+                                    <span className="text-2xl font-bold text-gray-900">{displayMetricValue(client.visceralFatLevel)}</span>
                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${visceralColor}`}>
-                                        {client.visceralFatLevel < 10 ? 'Saludable' : 'Riesgo'}
+                                        {!hasVisceralMetric ? '-' : client.visceralFatLevel! < 10 ? 'Saludable' : 'Riesgo'}
                                     </span>
                                 </div>
                             </div>
@@ -413,10 +469,10 @@ export function NutritionClientMedicalHistoryPage() {
                                             <div className="w-3 h-3 rounded-full bg-blue-500"></div>
                                             <span className="text-sm text-gray-600">Grasa Corporal</span>
                                         </div>
-                                        <span className="font-bold text-gray-900">{client.bodyFatPct}%</span>
+                                        <span className="font-bold text-gray-900">{formatValueWithUnit(client.bodyFatPct, '%')}</span>
                                     </div>
                                     <div className="w-full bg-blue-100 rounded-full h-2">
-                                        <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${client.bodyFatPct}%` }}></div>
+                                        <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${client.bodyFatPct ?? 0}%` }}></div>
                                     </div>
 
                                     <div className="flex justify-between items-center">
@@ -424,7 +480,7 @@ export function NutritionClientMedicalHistoryPage() {
                                             <div className="w-3 h-3 rounded-full bg-purple-500"></div>
                                             <span className="text-sm text-gray-600">Masa Muscular</span>
                                         </div>
-                                        <span className="font-bold text-gray-900">{client.muscleMassKg} kg</span>
+                                        <span className="font-bold text-gray-900">{formatValueWithUnit(client.muscleMassKg, 'kg')}</span>
                                     </div>
                                     <div className="w-full bg-purple-100 rounded-full h-2">
                                         <div className="bg-purple-500 h-2 rounded-full" style={{ width: '65%' }}></div>
@@ -444,18 +500,18 @@ export function NutritionClientMedicalHistoryPage() {
                                         className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-gray-300 transition-all"
                                     >
                                         <span className="text-sm text-gray-500">Cintura</span>
-                                        <span className="font-bold text-gray-900">{client.waistCm} cm</span>
+                                        <span className="font-bold text-gray-900">{formatValueWithUnit(client.waistCm, 'cm')}</span>
                                     </div>
                                     <div 
                                         onClick={() => setSelectedMetric({ type: 'hips', title: 'Cadera', unit: 'cm' })}
                                         className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-gray-300 transition-all"
                                     >
                                         <span className="text-sm text-gray-500">Cadera</span>
-                                        <span className="font-bold text-gray-900">{client.hipCm} cm</span>
+                                        <span className="font-bold text-gray-900">{formatValueWithUnit(client.hipCm, 'cm')}</span>
                                     </div>
                                     <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100">
                                         <span className="text-sm text-gray-500">Relación C-C</span>
-                                        <span className="font-bold text-gray-900">{(client.waistCm / client.hipCm).toFixed(2)}</span>
+                                        <span className="font-bold text-gray-900">{displayMetricValue(client.waistToHipRatio)}</span>
                                     </div>
 
                                     {/* Additional Measurements */}
@@ -464,7 +520,7 @@ export function NutritionClientMedicalHistoryPage() {
                                         className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-gray-300 transition-all"
                                     >
                                         <span className="text-sm text-gray-500">Pecho</span>
-                                        <span className="font-bold text-gray-900">{client.chestCm || '-'} cm</span>
+                                        <span className="font-bold text-gray-900">{formatValueWithUnit(client.chestCm, 'cm')}</span>
                                     </div>
 
                                     <div 
@@ -480,7 +536,7 @@ export function NutritionClientMedicalHistoryPage() {
                                         className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-gray-300 transition-all"
                                     >
                                         <span className="text-sm text-gray-500">Brazo (I/D)</span>
-                                        <span className="font-bold text-gray-900">{client.armLeftCm || '-'}/{client.armRightCm || '-'} cm</span>
+                                        <span className="font-bold text-gray-900">{formatPairWithUnit(client.armLeftCm, client.armRightCm, 'cm')}</span>
                                     </div>
 
                                     <div 
@@ -496,7 +552,7 @@ export function NutritionClientMedicalHistoryPage() {
                                         className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-gray-300 transition-all"
                                     >
                                         <span className="text-sm text-gray-500">Muslo (I/D)</span>
-                                        <span className="font-bold text-gray-900">{client.thighLeftCm || '-'}/{client.thighRightCm || '-'} cm</span>
+                                        <span className="font-bold text-gray-900">{formatPairWithUnit(client.thighLeftCm, client.thighRightCm, 'cm')}</span>
                                     </div>
 
                                     <div 
@@ -512,7 +568,7 @@ export function NutritionClientMedicalHistoryPage() {
                                         className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-100 cursor-pointer hover:border-gray-300 transition-all"
                                     >
                                         <span className="text-sm text-gray-500">Pantorrilla (I/D)</span>
-                                        <span className="font-bold text-gray-900">{client.calfLeftCm || '-'}/{client.calfRightCm || '-'} cm</span>
+                                        <span className="font-bold text-gray-900">{formatPairWithUnit(client.calfLeftCm, client.calfRightCm, 'cm')}</span>
                                     </div>
                                 </div>
                             </div>
