@@ -3,7 +3,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 ARG VITE_NUTRITION_API_URL=https://nutrition-api.fitpilot.fit
-ARG VITE_TRAINING_API_URL=http://localhost:3000
+ARG VITE_TRAINING_API_URL=https://training-api.fitpilot.fit/
 
 ENV VITE_NUTRITION_API_URL=$VITE_NUTRITION_API_URL
 ENV VITE_TRAINING_API_URL=$VITE_TRAINING_API_URL
