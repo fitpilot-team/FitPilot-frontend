@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -128,9 +128,20 @@ const buildTrainingInterviewPayload = (profile: TrainingProfileState): ClientInt
 export function NutritionConsultationPage() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { professional } = useProfessional();
+    const { professional, userData, isLoading: isProfessionalLoading, refreshProfessional } = useProfessional();
     const { user } = useAuthStore();
-    const professionalId = professional?.sub || user?.id;
+    const professionalId = useMemo(() => {
+        const candidates = [userData?.id, user?.id, professional?.sub];
+
+        for (const candidate of candidates) {
+            const parsed = Number(candidate);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                return parsed;
+            }
+        }
+
+        return null;
+    }, [professional?.sub, user?.id, userData?.id]);
 
     const {
         data: appointments,
@@ -141,7 +152,8 @@ export function NutritionConsultationPage() {
     const {
         data: clients,
         isLoading: isLoadingClients,
-        isError: isClientsError
+        isError: isClientsError,
+        refetch: refetchClients
     } = useProfessionalClients(professionalId?.toString() || '');
 
     // Auto-refetch when window gains focus to sync session status across tabs
@@ -264,25 +276,42 @@ export function NutritionConsultationPage() {
     const handleSaveMetrics = () => {
         if (!appointment?.client_id) return;
 
-        // Convert metrics to numbers or null if empty
+        const metricKeyMap: Record<string, string> = {
+            weight: 'weight_kg',
+            height: 'height_cm',
+        };
+
+        // Convert metrics to numbers and map frontend field names to backend schema.
         const processedMetrics = Object.entries(metrics).reduce((acc, [key, value]) => {
-            acc[key] = value === '' ? null : Number(value);
+            const rawValue = String(value ?? '').trim();
+            if (!rawValue) {
+                return acc;
+            }
+
+            const normalizedValue = rawValue.replace(',', '.');
+            const parsedValue = Number(normalizedValue);
+
+            if (!Number.isFinite(parsedValue)) {
+                return acc;
+            }
+
+            const backendKey = metricKeyMap[key] ?? key;
+            acc[backendKey] = parsedValue;
             return acc;
-        }, {} as any);
+        }, {} as Record<string, number>);
+
+        if (Object.keys(processedMetrics).length === 0) {
+            alert('Ingresa al menos una medida para guardar.');
+            return;
+        }
 
         const metricData = {
             user_id: Number(appointment.client_id),
             date: new Date().toISOString().split('T')[0],
-            recorded_at: new Date().toISOString(),
+            appointment_id: Number(appointment.id),
+            ...(professionalId ? { recorded_by_user_id: Number(professionalId) } : {}),
             ...processedMetrics
         };
-
-        // Remove null keys if the backend doesn't like them
-        Object.keys(metricData).forEach(key => {
-            if (metricData[key] === null) {
-                delete metricData[key];
-            }
-        });
 
         saveMetricMutation.mutate(metricData, {
             onSuccess: () => {
@@ -1178,7 +1207,25 @@ export function NutritionConsultationPage() {
         }, 3000);
     };
 
-    if (!professionalId || isLoadingAppointments || isLoadingClients) {
+    const hasAppointmentsData = Array.isArray(appointments);
+    const hasClientsData = Array.isArray(clients);
+    const hasLoadErrorWithoutData =
+        (isAppointmentsError && !hasAppointmentsData) ||
+        (isClientsError && !hasClientsData);
+    const isInitialDataLoading =
+        (isProfessionalLoading && !professionalId) ||
+        (Boolean(professionalId) &&
+            ((!hasAppointmentsData && isLoadingAppointments) || (!hasClientsData && isLoadingClients)));
+
+    const handleRetryConsultationLoad = useCallback(async () => {
+        if (!professionalId) {
+            await refreshProfessional(true);
+        }
+
+        await Promise.allSettled([refetchAppointments(), refetchClients()]);
+    }, [professionalId, refreshProfessional, refetchAppointments, refetchClients]);
+
+    if (isInitialDataLoading) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
@@ -1189,14 +1236,20 @@ export function NutritionConsultationPage() {
         );
     }
 
-    if (isAppointmentsError || isClientsError) {
+    if (!professionalId || hasLoadErrorWithoutData) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
                     <p className="text-gray-900 font-bold text-xl mb-2">No se pudo iniciar la consulta</p>
-                    <p className="text-gray-500 text-sm mb-4">Ocurrió un error cargando la información.</p>
+                    <p className="text-gray-500 text-sm mb-4">
+                        {!professionalId
+                            ? 'No se pudo identificar el perfil profesional para esta sesión.'
+                            : 'Ocurrió un error cargando la información.'}
+                    </p>
                     <button
-                        onClick={() => window.location.reload()}
+                        onClick={() => {
+                            void handleRetryConsultationLoad();
+                        }}
                         className="px-6 py-2 bg-nutrition-600 text-white rounded-xl shadow-lg"
                     >
                         Reintentar
