@@ -12,7 +12,8 @@ import {
 } from 'recharts';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ClientHealthMetric, ClientMetricHistory } from '@/features/client-history/types';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ClientHealthMetric, ClientMetricHistory, ClientMetricsPagination } from '@/features/client-history/types';
 
 interface ClientMetricsModalProps {
     isOpen: boolean;
@@ -20,6 +21,8 @@ interface ClientMetricsModalProps {
     type: 'health' | 'body' | null;
     healthMetrics?: ClientHealthMetric[];
     bodyMetrics?: ClientMetricHistory[];
+    bodyMetricsPagination?: ClientMetricsPagination;
+    onBodyMetricsPageChange?: (page: number) => void;
 }
 
 export const ClientMetricsModal: React.FC<ClientMetricsModalProps> = ({
@@ -27,7 +30,9 @@ export const ClientMetricsModal: React.FC<ClientMetricsModalProps> = ({
     onClose,
     type,
     healthMetrics = [],
-    bodyMetrics = []
+    bodyMetrics = [],
+    bodyMetricsPagination,
+    onBodyMetricsPageChange
 }) => {
     const [selectedMetric, setSelectedMetric] = useState<string>(type === 'health' ? 'glucose_mg_dl' : 'weight_kg');
 
@@ -79,6 +84,11 @@ export const ClientMetricsModal: React.FC<ClientMetricsModalProps> = ({
     const metricOptions = type === 'health' 
         ? ['glucose_mg_dl', 'systolic_mmhg', 'diastolic_mmhg', 'heart_rate_bpm', 'oxygen_saturation_pct']
         : ['weight_kg', 'body_fat_pct', 'muscle_mass_kg', 'waist_cm', 'hip_cm'];
+    const canPaginateBodyMetrics =
+        type === 'body' &&
+        !!bodyMetricsPagination &&
+        bodyMetricsPagination.totalPages > 1 &&
+        !!onBodyMetricsPageChange;
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={type === 'health' ? 'Historial de Salud' : 'Progreso Corporal'}>
@@ -143,8 +153,13 @@ export const ClientMetricsModal: React.FC<ClientMetricsModalProps> = ({
 
                 {/* History Table */}
                 <div className="bg-gray-50 rounded-2xl overflow-hidden border border-gray-100">
-                    <div className="px-4 py-2 bg-gray-100/50 border-b border-gray-200">
+                    <div className="px-4 py-2 bg-gray-100/50 border-b border-gray-200 flex items-center justify-between gap-3">
                         <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Historial Detallado</h4>
+                        {type === 'body' && bodyMetricsPagination && (
+                            <span className="text-[11px] font-semibold text-gray-400">
+                                {bodyMetricsPagination.total} registros
+                            </span>
+                        )}
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left">
@@ -181,6 +196,31 @@ export const ClientMetricsModal: React.FC<ClientMetricsModalProps> = ({
                             </tbody>
                         </table>
                     </div>
+                    {canPaginateBodyMetrics && bodyMetricsPagination && (
+                        <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between gap-3">
+                            <button
+                                type="button"
+                                onClick={() => onBodyMetricsPageChange?.(bodyMetricsPagination.page - 1)}
+                                disabled={bodyMetricsPagination.page <= 1}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                            >
+                                <ChevronLeft className="w-4 h-4" />
+                                Anterior
+                            </button>
+                            <span className="text-sm font-semibold text-gray-500 text-center">
+                                Pagina {bodyMetricsPagination.page} de {bodyMetricsPagination.totalPages}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => onBodyMetricsPageChange?.(bodyMetricsPagination.page + 1)}
+                                disabled={bodyMetricsPagination.page >= bodyMetricsPagination.totalPages}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                            >
+                                Siguiente
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         </Modal>

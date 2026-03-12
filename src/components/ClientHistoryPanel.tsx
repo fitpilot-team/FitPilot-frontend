@@ -10,16 +10,27 @@ interface ClientHistoryPanelProps {
 }
 
 import { ClientMetricsModal } from './ClientMetricsModal';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // ... existing code ...
 
+const BODY_METRICS_PAGE_SIZE = 10;
+
 export const ClientHistoryPanel: React.FC<ClientHistoryPanelProps> = ({ clientId, currentCalories = 0 }) => {
-    const { data: history, isLoading } = useClientHistory(clientId);
+    const [bodyMetricsPage, setBodyMetricsPage] = useState(1);
+    const { data: history, isLoading } = useClientHistory(clientId, bodyMetricsPage, BODY_METRICS_PAGE_SIZE);
     const [metricsModal, setMetricsModal] = useState<{ isOpen: boolean; type: 'health' | 'body' | null }>({
         isOpen: false,
         type: null
     });
+
+    useEffect(() => {
+        setBodyMetricsPage(1);
+    }, [clientId]);
+
+    const closeMetricsModal = () => {
+        setMetricsModal((current) => ({ ...current, isOpen: false }));
+    };
 
     if (isLoading) {
         // ... existing loading skeleton ...
@@ -289,10 +300,12 @@ export const ClientHistoryPanel: React.FC<ClientHistoryPanelProps> = ({ clientId
 
             <ClientMetricsModal 
                 isOpen={metricsModal.isOpen}
-                onClose={() => setMetricsModal({ ...metricsModal, isOpen: false })}
+                onClose={closeMetricsModal}
                 type={metricsModal.type}
                 healthMetrics={history.client_health_metrics}
                 bodyMetrics={history.client_metrics}
+                bodyMetricsPagination={history.client_metrics_pagination}
+                onBodyMetricsPageChange={setBodyMetricsPage}
             />
         </>
     );

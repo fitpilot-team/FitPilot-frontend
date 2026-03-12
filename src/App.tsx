@@ -17,6 +17,7 @@ import { NutritionAgendaPage } from './pages/nutrition/NutritionAgendaPage';
 import { NutritionLayout } from './components/layout/NutritionLayout';
 import { NutritionClientDetailPage } from './pages/nutrition/NutritionClientDetailPage';
 import { NutritionClientMedicalHistoryPage } from './pages/nutrition/NutritionClientMedicalHistoryPage';
+import { NutritionClientMeasurementsHistoryPage } from './pages/nutrition/NutritionClientMeasurementsHistoryPage';
 import { NutritionConsultationPage } from './pages/nutrition/NutritionConsultationPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AuthLayout } from './components/layout/AuthLayout';
@@ -341,6 +342,14 @@ function App() {
             element={
               <ProtectedRoute requiredAccess="nutrition">
                 <NutritionClientMedicalHistoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="clients/:clientId/measurements"
+            element={
+              <ProtectedRoute requiredAccess="nutrition">
+                <NutritionClientMeasurementsHistoryPage />
               </ProtectedRoute>
             }
           />
