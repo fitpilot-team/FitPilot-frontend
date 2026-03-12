@@ -11,6 +11,7 @@ export interface Client {
   id: string;
   email: string;
   full_name: string;
+  date_of_birth?: string | null;
   is_active: boolean;
   is_verified: boolean;
   created_at: string;

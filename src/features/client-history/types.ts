@@ -14,12 +14,15 @@ export interface IHistoryClient {
     username: string;
     is_phone_verified: boolean;
     genre?: string;
+    onboarding_status?: string | null;
+    onboarding_completed_at?: string | null;
     client_allergens: ClientAllergen[];
     client_goals: ClientGoal[];
     client_records: ClientRecord[];
     daily_targets: DailyTarget[];
     client_metrics: ClientMetricHistory[];
     client_health_metrics: ClientHealthMetric[];
+    client_injuries?: ClientInjury[];
     appointments: Appointment[];
 }
 
@@ -45,6 +48,19 @@ export interface ClientAllergen {
         type: string;
         created_at: string;
     };
+}
+
+export interface ClientInjury {
+    id: number;
+    user_id: number;
+    name: string;
+    body_part: string;
+    severity: number | null;
+    status: string;
+    limitations: string | null;
+    diagnosis_date: string | null;
+    recovery_date: string | null;
+    created_at: string;
 }
 
 export interface ClientGoal {

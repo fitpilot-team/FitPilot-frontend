@@ -11,9 +11,22 @@ interface ClientCardProps {
   serviceType?: string;
   services?: string[];
   onAction?: () => void;
+  onIntakeAction?: () => void;
+  onboardingStatus?: string | null;
 }
 
-export function ClientCard({ image, clientName, clientLastName, nextAppointment, activationUrl, serviceType, services, onAction }: ClientCardProps) {
+export function ClientCard({
+  image,
+  clientName,
+  clientLastName,
+  nextAppointment,
+  activationUrl,
+  serviceType,
+  services,
+  onAction,
+  onIntakeAction,
+  onboardingStatus,
+}: ClientCardProps) {
   const [copied, setCopied] = useState(false);
   const fallbackAvatar = useMemo(
     () =>
@@ -22,6 +35,8 @@ export function ClientCard({ image, clientName, clientLastName, nextAppointment,
   );
   const normalizedImage = image && image !== 'null' && image !== 'undefined' ? image : fallbackAvatar;
   const [currentImage, setCurrentImage] = useState(normalizedImage);
+  const normalizedOnboardingStatus = onboardingStatus?.toLowerCase() ?? 'pending';
+  const isIntakeCompleted = normalizedOnboardingStatus === 'completed';
 
   useEffect(() => {
     setCurrentImage(normalizedImage);
@@ -95,6 +110,15 @@ export function ClientCard({ image, clientName, clientLastName, nextAppointment,
             <h3 className="text-lg font-bold text-gray-900 truncate">
                 {clientLastName}
             </h3>
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                isIntakeCompleted
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {isIntakeCompleted ? 'Intake completo' : 'Intake pendiente'}
+            </span>
         </div>
        
         
@@ -135,6 +159,22 @@ export function ClientCard({ image, clientName, clientLastName, nextAppointment,
                 </div>
             )}
         </div>
+
+        {onIntakeAction ? (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={onIntakeAction}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                isIntakeCompleted
+                  ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+              }`}
+            >
+              {isIntakeCompleted ? 'Editar intake' : 'Completar intake'}
+            </button>
+          </div>
+        ) : null}
 
         {activationUrl ? (
           <div className="mt-3 flex items-center gap-2">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-hot-toast';
@@ -9,6 +9,7 @@ import { useAIStore } from '../../store/aiStore';
 import type { Client } from '../../types/client';
 import type { QuestionnaireAnswers } from '../../types/ai';
 import { clientInterviewsApi } from '../../services/client-interviews';
+import { calculateAgeFromDateOfBirth } from '../../utils/dateOfBirth';
 
 interface ClientContext {
   client: Client;
@@ -17,6 +18,10 @@ interface ClientContext {
 export function ClientInterviewPage() {
   const { t } = useTranslation(['ai', 'common']);
   const { client } = useOutletContext<ClientContext>();
+  const derivedAge = useMemo(
+    () => calculateAgeFromDateOfBirth(client.date_of_birth),
+    [client.date_of_birth]
+  );
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -30,6 +35,7 @@ export function ClientInterviewPage() {
     const loadInterview = async () => {
       try {
         reset();
+        setAnswers({ age: derivedAge });
         const interview = await clientInterviewsApi.getInterview(client.id);
 
         if (interview) {
@@ -38,7 +44,7 @@ export function ClientInterviewPage() {
           setAnswers({
             // Profile
             fitness_level: interview.experience_level as any,
-            age: interview.age ?? undefined,
+            age: derivedAge,
             gender: interview.gender as any,
             weight_kg: interview.weight_kg ?? undefined,
             height_cm: interview.height_cm ?? undefined,
@@ -70,7 +76,7 @@ export function ClientInterviewPage() {
     };
 
     loadInterview();
-  }, [client.id, reset, setAnswers]);
+  }, [client.id, reset, setAnswers, derivedAge]);
 
   // Ensure questionnaire config is loaded
   useEffect(() => {
@@ -86,7 +92,7 @@ export function ClientInterviewPage() {
     return {
       // Profile
       experience_level: data.fitness_level as 'beginner' | 'intermediate' | 'advanced' | undefined,
-      age: data.age,
+      age: derivedAge,
       gender: data.gender as 'male' | 'female' | 'other' | 'prefer_not_to_say' | undefined,
       weight_kg: data.weight_kg,
       height_cm: data.height_cm,

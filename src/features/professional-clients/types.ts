@@ -13,6 +13,8 @@ export interface IProfessionalClient {
     gender?: string | null;
     genre?: string;
     date_of_birth?: string | null;
+    onboarding_status?: string | null;
+    onboarding_completed_at?: string | null;
 }
 
 export interface Client extends IProfessionalClient {

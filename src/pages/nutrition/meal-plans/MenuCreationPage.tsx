@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
 import { useGetMealPlanById } from '@/features/meal-plan/queries';
@@ -91,6 +91,7 @@ export function MenuCreationPage() {
     const [searchParams] = useSearchParams();
 
     const navigate = useNavigate();
+    const location = useLocation();
     const queryClient = useQueryClient();
     const planId = Number(searchParams.get('planId'));
     const clientId = Number(searchParams.get('clientId'));
@@ -470,6 +471,8 @@ export function MenuCreationPage() {
     }
 
     const client = useMemo(() => clients?.find(c => c.id === clientId), [clients, clientId]);
+    const isClientIntakeCompleted =
+        client?.onboarding_status?.toLowerCase() === 'completed';
 
     const groupsMap = useMemo(() => {
         if (!exchangeGroups) return {};
@@ -980,6 +983,26 @@ export function MenuCreationPage() {
                                 <h1 className="text-4xl font-black text-gray-900 tracking-tight leading-none">
                                     Creación de menú para <span className="text-emerald-600">{client?.name || 'Cliente'}</span>
                                 </h1>
+                                {client && !isClientIntakeCompleted ? (
+                                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                        <p className="text-sm font-medium text-amber-900">
+                                            Este cliente tiene intake pendiente. Completarlo mejora la generación del menú.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                navigate(
+                                                    `/nutrition/clients/${client.id}/intake?returnTo=${encodeURIComponent(
+                                                        `${location.pathname}${location.search}`,
+                                                    )}`,
+                                                )
+                                            }
+                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors"
+                                        >
+                                            Completar intake
+                                        </button>
+                                    </div>
+                                ) : null}
                             </div>
 
                             <div className="flex flex-wrap items-center gap-6">

@@ -20,6 +20,8 @@ import {
   QuickConfigPanel,
 } from '../components/ai';
 import type { CreationMode, InterviewValidationResponse } from '../types/ai';
+import { clientsApi } from '../services/clients';
+import { calculateAgeFromDateOfBirth } from '../utils/dateOfBirth';
 
 type PageStep = 'mode-selection' | 'client-selection' | 'template-config' | 'quick-config' | 'questionnaire' | 'generating';
 
@@ -132,7 +134,13 @@ export const AIGeneratorPage: React.FC = () => {
       if (clientIdFromUrl) {
         setIsInitializing(true);
         setCreationMode('client');
-        setSelectedClient(clientIdFromUrl, null);
+        try {
+          const selectedClient = await clientsApi.getClient(clientIdFromUrl);
+          const derivedAge = calculateAgeFromDateOfBirth(selectedClient.date_of_birth);
+          setSelectedClient(clientIdFromUrl, selectedClient.full_name, derivedAge);
+        } catch {
+          setSelectedClient(clientIdFromUrl, null, undefined);
+        }
 
         try {
           // Validate the client's interview
@@ -264,8 +272,8 @@ export const AIGeneratorPage: React.FC = () => {
     }
   };
 
-  const handleClientSelect = (clientId: string, clientName: string) => {
-    setSelectedClient(clientId, clientName);
+  const handleClientSelect = (clientId: string, clientName: string, derivedAge?: number) => {
+    setSelectedClient(clientId, clientName, derivedAge);
   };
 
   const handleValidationComplete = async (validation: InterviewValidationResponse) => {
