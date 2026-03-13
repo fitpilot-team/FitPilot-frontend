@@ -1,5 +1,5 @@
 import { Droplets, Pizza, Wheat } from 'lucide-react';
-import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
+import { Cell, Pie, PieChart } from 'recharts';
 
 export interface MacroStats {
     calories: number;
@@ -80,24 +80,24 @@ export function MacroSummaryCard({
 
                 <div className="relative flex h-48 w-full items-center justify-center">
                     <div className="relative h-40 w-40">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={chartData}
-                                    innerRadius={55}
-                                    outerRadius={75}
-                                    paddingAngle={0}
-                                    dataKey="value"
-                                    stroke="none"
-                                    startAngle={90}
-                                    endAngle={450}
-                                >
-                                    {chartData.map((entry) => (
-                                        <Cell key={entry.key} fill={entry.color} />
-                                    ))}
-                                </Pie>
-                            </PieChart>
-                        </ResponsiveContainer>
+                        <PieChart width={160} height={160}>
+                            <Pie
+                                data={chartData}
+                                innerRadius={55}
+                                outerRadius={75}
+                                paddingAngle={0}
+                                dataKey="value"
+                                stroke="none"
+                                startAngle={90}
+                                endAngle={450}
+                                cx={80}
+                                cy={80}
+                            >
+                                {chartData.map((entry) => (
+                                    <Cell key={entry.key} fill={entry.color} />
+                                ))}
+                            </Pie>
+                        </PieChart>
                         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                             <span className="text-3xl font-black leading-none text-gray-900">
                                 {stats.calories.toFixed(0)}

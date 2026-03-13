@@ -285,8 +285,8 @@ export function NutritionRecipeEditorPage() {
         return (
             <div className="mx-auto max-w-7xl p-6">
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-                    <div className="h-[620px] animate-pulse rounded-[2rem] border border-gray-100 bg-gray-50" />
-                    <div className="h-[620px] animate-pulse rounded-[2rem] border border-gray-100 bg-gray-50" />
+                    <div className="order-2 h-[620px] animate-pulse rounded-[2rem] border border-gray-100 bg-gray-50 xl:order-1" />
+                    <div className="order-1 h-[420px] animate-pulse rounded-[2rem] border border-gray-100 bg-gray-50 xl:order-2 xl:h-[620px]" />
                 </div>
             </div>
         );
@@ -345,7 +345,7 @@ export function NutritionRecipeEditorPage() {
             ) : null}
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-                <div className="space-y-6">
+                <div className="order-2 space-y-6 xl:order-1">
                     <section className="rounded-[2rem] border border-gray-100 bg-white p-6 shadow-sm">
                         <h2 className="text-xl font-bold text-gray-900">Datos generales</h2>
                         <div className="mt-5 grid gap-5">
@@ -505,7 +505,7 @@ export function NutritionRecipeEditorPage() {
                     </section>
                 </div>
 
-                <div className="space-y-6">
+                <div className="order-1 space-y-6 xl:order-2">
                     <div className="xl:sticky xl:top-6 xl:self-start">
                         <div className="space-y-6">
                             <RecipeImageUploader
