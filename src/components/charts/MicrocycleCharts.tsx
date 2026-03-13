@@ -9,6 +9,11 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
+import type {
+  Formatter,
+  NameType,
+  ValueType,
+} from 'recharts/types/component/DefaultTooltipContent';
 import { useTranslation } from 'react-i18next';
 import { Card } from '../common/Card';
 import { BodyMap } from './BodyMap';
@@ -33,6 +38,18 @@ interface MicrocycleChartsProps {
   trainingDays: TrainingDay[];
   exercises?: Exercise[];
 }
+
+const toTooltipNumber = (value: ValueType | undefined) => {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return Number(value[0] ?? 0);
+  }
+
+  return Number(value ?? 0);
+};
 
 export function MicrocycleCharts({ weekNumber, trainingDays, exercises }: MicrocycleChartsProps) {
   const { t } = useTranslation();
@@ -112,6 +129,36 @@ export function MicrocycleCharts({ weekNumber, trainingDays, exercises }: Microc
     125
   );
 
+  const setsTooltipFormatter: Formatter<ValueType, NameType> = (value, name, item) => {
+    const numericValue = toTooltipNumber(value);
+    const key = String(name ?? '');
+    const payload = item?.payload as (typeof setsBarData)[number] | undefined;
+
+    if (key === 'effectiveSets' && payload) {
+      return [
+        `${numericValue} sets | MV:${payload.mv} MEV:${payload.mev} MAV:${payload.mavLow}-${payload.mavHigh} MRV:${payload.mrv}`,
+        'RP Volume',
+      ];
+    }
+
+    return [numericValue, key];
+  };
+
+  const repsTooltipFormatter: Formatter<ValueType, NameType> = (value, name, item) => {
+    const numericValue = toTooltipNumber(value);
+    const key = String(name ?? '');
+    const payload = item?.payload as (typeof repsBarData)[number] | undefined;
+
+    if (key === 'effectiveReps' && payload) {
+      return [
+        `${numericValue} reps (optimal: ${payload.minOptimal}-${payload.maxOptimal})`,
+        'Effective Reps',
+      ];
+    }
+
+    return [numericValue, key];
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
       {/* Metrics Summary */}
@@ -189,16 +236,7 @@ export function MicrocycleCharts({ weekNumber, trainingDays, exercises }: Microc
               />
               <Tooltip
                 contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                formatter={(value: number, name: string, props) => {
-                  if (name === 'effectiveSets' && props?.payload) {
-                    const payload = props.payload as typeof setsBarData[0];
-                    return [
-                      `${value} sets | MV:${payload.mv} MEV:${payload.mev} MAV:${payload.mavLow}-${payload.mavHigh} MRV:${payload.mrv}`,
-                      'RP Volume',
-                    ];
-                  }
-                  return [value, name];
-                }}
+                formatter={setsTooltipFormatter}
               />
               <Bar
                 dataKey="effectiveSets"
@@ -291,16 +329,7 @@ export function MicrocycleCharts({ weekNumber, trainingDays, exercises }: Microc
               />
               <Tooltip
                 contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                formatter={(value: number, name: string, props) => {
-                  if (name === 'effectiveReps' && props?.payload) {
-                    const payload = props.payload as typeof repsBarData[0];
-                    return [
-                      `${value} reps (optimal: ${payload.minOptimal}-${payload.maxOptimal})`,
-                      'Effective Reps',
-                    ];
-                  }
-                  return [value, name];
-                }}
+                formatter={repsTooltipFormatter}
               />
               <Bar
                 dataKey="effectiveReps"

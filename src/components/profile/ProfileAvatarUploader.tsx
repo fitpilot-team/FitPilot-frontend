@@ -1,18 +1,19 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, MoveHorizontal, MoveVertical, Pencil, ZoomIn } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
+import {
+    blobToDataUrl,
+    clamp,
+    createCropDraftFromFile,
+    DEFAULT_ACCEPTED_IMAGE_TYPES,
+    getCropRect,
+    ImageCropDraft,
+    renderSquareCropToBlob,
+    revokeDraftUrl,
+} from '@/utils/imageProcessing';
 
-const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const MAX_AVATAR_BYTES = 1024 * 1024; // 1MB
-const MAX_SOURCE_BYTES = 12 * 1024 * 1024; // hard cap to avoid huge images
 const OUTPUT_SIZE = 512;
 const PREVIEW_SIZE = 288;
-
-type CropDraft = {
-    src: string;
-    naturalWidth: number;
-    naturalHeight: number;
-};
 
 interface ProfileAvatarUploaderProps {
     firstName?: string;
@@ -22,12 +23,6 @@ interface ProfileAvatarUploaderProps {
     isSaving?: boolean;
     previewMode?: 'modal' | 'overlay';
 }
-
-type CropRect = {
-    sx: number;
-    sy: number;
-    side: number;
-};
 
 type AdjustmentSliderProps = {
     label: string;
@@ -42,10 +37,6 @@ type AdjustmentSliderProps = {
     maxHint: string;
     onChange: (value: number) => void;
 };
-
-function clamp(value: number, min: number, max: number) {
-    return Math.min(Math.max(value, min), max);
-}
 
 function AdjustmentSlider({
     label,
@@ -105,94 +96,6 @@ function getInitials(firstName?: string, lastName?: string) {
     return (first + last || first || 'U').slice(0, 2);
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('No se pudo cargar la imagen seleccionada.'));
-        img.src = src;
-    });
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-        canvas.toBlob((blob) => {
-            if (!blob) {
-                reject(new Error('No se pudo procesar la imagen.'));
-                return;
-            }
-            resolve(blob);
-        }, type, quality);
-    });
-}
-
-async function blobToDataUrl(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('No se pudo leer la imagen procesada.'));
-        reader.readAsDataURL(blob);
-    });
-}
-
-function getCropRect(width: number, height: number, zoom: number, offsetX: number, offsetY: number): CropRect {
-    const baseSide = Math.min(width, height);
-    const side = clamp(baseSide / zoom, 64, baseSide);
-    const maxX = Math.max(0, (width - side) / 2);
-    const maxY = Math.max(0, (height - side) / 2);
-
-    const sx = clamp(width / 2 - side / 2 + (offsetX / 100) * maxX, 0, width - side);
-    const sy = clamp(height / 2 - side / 2 + (offsetY / 100) * maxY, 0, height - side);
-
-    return { sx, sy, side };
-}
-
-function downscaleCanvas(sourceCanvas: HTMLCanvasElement, nextSize: number) {
-    const canvas = document.createElement('canvas');
-    canvas.width = nextSize;
-    canvas.height = nextSize;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-        throw new Error('No se pudo redimensionar la imagen.');
-    }
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, nextSize, nextSize);
-    return canvas;
-}
-
-async function compressCanvasUnder1MB(canvas: HTMLCanvasElement): Promise<Blob> {
-    const qualitySteps = [0.92, 0.84, 0.76, 0.68, 0.6, 0.5, 0.4];
-    let workingCanvas = canvas;
-    let bestBlob: Blob | null = null;
-
-    for (let attempt = 0; attempt < 5; attempt++) {
-        for (const quality of qualitySteps) {
-            const blob = await canvasToBlob(workingCanvas, 'image/jpeg', quality);
-            if (!bestBlob || blob.size < bestBlob.size) {
-                bestBlob = blob;
-            }
-            if (blob.size <= MAX_AVATAR_BYTES) {
-                return blob;
-            }
-        }
-
-        if (workingCanvas.width <= 256) break;
-        const nextSize = Math.max(256, Math.round(workingCanvas.width * 0.85));
-        workingCanvas = downscaleCanvas(workingCanvas, nextSize);
-    }
-
-    if (!bestBlob) {
-        throw new Error('No se pudo comprimir la imagen.');
-    }
-
-    if (bestBlob.size > MAX_AVATAR_BYTES) {
-        throw new Error('La imagen sigue pesando más de 1MB incluso después de comprimirla.');
-    }
-
-    return bestBlob;
-}
-
 export function ProfileAvatarUploader({
     firstName,
     lastName,
@@ -203,7 +106,7 @@ export function ProfileAvatarUploader({
 }: ProfileAvatarUploaderProps) {
     const inputRef = useRef<HTMLInputElement>(null);
     const [displayImage, setDisplayImage] = useState<string | null>(imageUrl ?? null);
-    const [draft, setDraft] = useState<CropDraft | null>(null);
+    const [draft, setDraft] = useState<ImageCropDraft | null>(null);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [zoom, setZoom] = useState(1.2);
     const [offsetX, setOffsetX] = useState(0);
@@ -221,9 +124,7 @@ export function ProfileAvatarUploader({
 
     useEffect(() => {
         return () => {
-            if (draft?.src?.startsWith('blob:')) {
-                URL.revokeObjectURL(draft.src);
-            }
+            revokeDraftUrl(draft);
         };
     }, [draft]);
 
@@ -292,29 +193,11 @@ export function ProfileAvatarUploader({
         setError(null);
         setSuccess(null);
 
-        if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-            setError('Formato no permitido. Usa JPG, PNG o WEBP.');
-            return;
-        }
-
-        if (file.size > MAX_SOURCE_BYTES) {
-            setError('La imagen es demasiado grande para procesarla. Usa una menor a 12MB.');
-            return;
-        }
-
         try {
-            const objectUrl = URL.createObjectURL(file);
-            const img = await loadImage(objectUrl);
+            const nextDraft = await createCropDraftFromFile(file);
 
-            if (draft?.src?.startsWith('blob:')) {
-                URL.revokeObjectURL(draft.src);
-            }
-
-            setDraft({
-                src: objectUrl,
-                naturalWidth: img.naturalWidth || img.width,
-                naturalHeight: img.naturalHeight || img.height,
-            });
+            revokeDraftUrl(draft);
+            setDraft(nextDraft);
             resetCropControls();
         } catch (e: any) {
             setError(e?.message || 'No se pudo abrir la imagen.');
@@ -328,31 +211,11 @@ export function ProfileAvatarUploader({
         setIsProcessing(true);
 
         try {
-            const image = await loadImage(draft.src);
-            const canvas = document.createElement('canvas');
-            canvas.width = OUTPUT_SIZE;
-            canvas.height = OUTPUT_SIZE;
-
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                throw new Error('No se pudo preparar el recorte.');
-            }
-
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(
-                image,
-                cropRect.sx,
-                cropRect.sy,
-                cropRect.side,
-                cropRect.side,
-                0,
-                0,
-                OUTPUT_SIZE,
-                OUTPUT_SIZE
-            );
-
-            const compressedBlob = await compressCanvasUnder1MB(canvas);
+            const compressedBlob = await renderSquareCropToBlob({
+                draft,
+                cropRect,
+                outputSize: OUTPUT_SIZE,
+            });
             const imageDataUrl = await blobToDataUrl(compressedBlob);
 
             await onSave(compressedBlob);
@@ -448,7 +311,7 @@ export function ProfileAvatarUploader({
                 <input
                     ref={inputRef}
                     type="file"
-                    accept={ACCEPTED_IMAGE_TYPES.join(',')}
+                    accept={DEFAULT_ACCEPTED_IMAGE_TYPES.join(',')}
                     className="hidden"
                     onChange={(e) => handleFileSelected(e.target.files?.[0])}
                 />

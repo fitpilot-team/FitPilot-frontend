@@ -82,3 +82,18 @@ export interface IFoodItem {
     deleted_at?: string | null;
 }
 
+export interface FoodSearchResult {
+    id: number;
+    name: string;
+    brand: string | null;
+    exchange_group_id: number | null;
+    base_serving_size: string | number | null;
+    base_unit: string | null;
+    calories_kcal?: string | number | null;
+    protein_g?: string | number | null;
+    carbs_g?: string | number | null;
+    fat_g?: string | number | null;
+    fiber_g?: string | number | null;
+    serving_units: IServingUnit[];
+}
+

@@ -257,6 +257,8 @@ export function NutritionClientsPage() {
                             activationUrl={client.activation_url ?? null}
                             serviceType={client.serviceType || ''}
                             services={client.services}
+                            onboardingStatus={client.onboarding_status}
+                            onIntakeAction={() => navigate(`/nutrition/clients/${client.id}/intake`)}
                             onAction={() => navigate(`/nutrition/clients/${client.id}/medical-history`)}
                         />
                     ))}

@@ -55,27 +55,18 @@ export const ProfileStep: React.FC = () => {
         </div>
       </div>
 
-      {/* Age */}
+      {/* Age (read-only from DB) */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label
-            htmlFor="age"
-            className="block text-sm font-medium text-gray-700 mb-1"
-          >
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             {t('profile.age')}
           </label>
-          <input
-            type="number"
-            id="age"
-            min={14}
-            max={100}
-            value={answers.age || ''}
-            onChange={(e) =>
-              setAnswer('age', e.target.value ? Number(e.target.value) : undefined)
-            }
-            placeholder={t('profile.agePlaceholder')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-          />
+          <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700 text-sm font-medium min-h-[42px] flex items-center">
+            {answers.age !== undefined ? `${answers.age}` : t('profile.agePlaceholder')}
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Se obtiene desde fecha de nacimiento del cliente.
+          </p>
         </div>
 
         <div>

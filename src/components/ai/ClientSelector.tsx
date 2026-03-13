@@ -11,10 +11,11 @@ import type { Client } from '../../types/client';
 import type { InterviewValidationResponse } from '../../types/ai';
 import { clientsApi } from '../../services/clients';
 import { aiService } from '../../services/ai';
+import { calculateAgeFromDateOfBirth } from '../../utils/dateOfBirth';
 
 interface ClientSelectorProps {
   selectedClientId: string | null;
-  onClientSelect: (clientId: string, clientName: string) => void;
+  onClientSelect: (clientId: string, clientName: string, derivedAge?: number) => void;
   onValidationComplete: (validation: InterviewValidationResponse) => void;
 }
 
@@ -76,7 +77,8 @@ export const ClientSelector: React.FC<ClientSelectorProps> = ({
     if (clientId) {
       const client = clients.find((c) => c.id === clientId);
       if (client) {
-        onClientSelect(clientId, client.full_name);
+        const derivedAge = calculateAgeFromDateOfBirth(client.date_of_birth);
+        onClientSelect(clientId, client.full_name, derivedAge);
       }
     }
   };

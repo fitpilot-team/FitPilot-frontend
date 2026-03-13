@@ -11,6 +11,9 @@ import { useSendVerification, useSignupMutation, useVerifyPhone } from '@/featur
 import { useAuthStore } from '@/store/newAuthStore';
 import { getUserRequest } from '@/api/auth/auth.api';
 import { useTranslation } from 'react-i18next';
+import toast from 'react-hot-toast';
+import { normalizePhoneToE164 } from '@/utils/phone';
+import { getApiErrorMessage } from '@/utils/apiError';
 
 export function RegisterPage() {
     const navigate = useNavigate();
@@ -40,9 +43,26 @@ export function RegisterPage() {
         password === confirmPassword &&
         isPhoneVerified;
 
+    const normalizePhoneOrNotify = () => {
+        const normalizedPhone = normalizePhoneToE164(phoneNumber);
+        if (!normalizedPhone) {
+            toast.error('Phone number must be in E.164 format (example: +14155552671).');
+            return null;
+        }
+
+        if (normalizedPhone !== phoneNumber) {
+            setPhoneNumber(normalizedPhone);
+        }
+
+        return normalizedPhone;
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!isFormValid || signupMutation.isPending) return;
+
+        const normalizedPhone = normalizePhoneOrNotify();
+        if (!normalizedPhone) return;
 
         signupMutation.mutate(
             {
@@ -51,7 +71,7 @@ export function RegisterPage() {
                 email: email.trim(),
                 password,
                 role: 'PROFESSIONAL',
-                phone_number: phoneNumber.trim(),
+                phone_number: normalizedPhone,
             },
             {
                 onSuccess: async (response) => {
@@ -73,6 +93,7 @@ export function RegisterPage() {
                 },
                 onError: (error) => {
                     console.error('Failed to signup:', error);
+                    toast.error(getApiErrorMessage(error) || 'Could not create account. Please try again.');
                 },
             }
         );
@@ -97,8 +118,11 @@ export function RegisterPage() {
     const handleSendVerification = () => {
         if (!phoneNumber || cooldownTime > 0) return;
 
+        const normalizedPhone = normalizePhoneOrNotify();
+        if (!normalizedPhone) return;
+
         sendVerificationMutation.mutate(
-            { phone_number: phoneNumber },
+            { phone_number: normalizedPhone },
             {
                 onSuccess: () => {
                     setIsVerificationModalOpen(true);
@@ -114,7 +138,7 @@ export function RegisterPage() {
                 },
                 onError: (error) => {
                     console.error("Failed to send verification:", error);
-                    // Handle error (show toast, etc.)
+                    toast.error(getApiErrorMessage(error) || 'Failed to send verification code.');
                 }
             }
         );
@@ -123,18 +147,21 @@ export function RegisterPage() {
     const handleVerifyPhone = () => {
         if (!verificationCode || verificationCode.length !== 6) return;
 
+        const normalizedPhone = normalizePhoneOrNotify();
+        if (!normalizedPhone) return;
+
         verifyPhoneMutation.mutate(
-            { phone_number: phoneNumber, code: verificationCode },
+            { phone_number: normalizedPhone, code: verificationCode },
             {
                 onSuccess: () => {
                     setIsVerificationModalOpen(false);
                     setVerificationCode('');
                     setIsPhoneVerified(true);
-                    // Handle success (show success message, mark phone as verified, etc.)
+                    toast.success('Phone number verified.');
                 },
                 onError: (error) => {
                     console.error("Failed to verify phone:", error);
-                    // Handle error (show toast, etc.)
+                    toast.error(getApiErrorMessage(error) || 'Failed to verify code.');
                 }
             }
         );

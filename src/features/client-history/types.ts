@@ -3,6 +3,8 @@ export interface IHistoryClient {
   name: string;
   email: string;
   date_of_birth?: string | null;
+  onboarding_status?: string | null;
+  onboarding_completed_at?: string | null;
   created_at: string;
   updated_at: string;
   is_active: boolean;
@@ -21,6 +23,7 @@ export interface IHistoryClient {
   client_metrics: ClientMetricHistory[];
   client_metrics_pagination?: ClientMetricsPagination;
   client_health_metrics: ClientHealthMetric[];
+  client_injuries?: ClientInjury[];
   appointments: Appointment[];
 }
 
@@ -53,6 +56,19 @@ export interface ClientAllergen {
     type: string;
     created_at: string;
   };
+}
+
+export interface ClientInjury {
+  id: number;
+  user_id: number;
+  name: string;
+  body_part: string;
+  severity: number | null;
+  status: string;
+  limitations: string | null;
+  diagnosis_date: string | null;
+  recovery_date: string | null;
+  created_at: string;
 }
 
 export interface ClientGoal {
@@ -108,57 +124,57 @@ export interface ClientMetricHistory {
   weight_kg: string;
   height_cm: string;
   body_fat_pct: string;
-  upper_body_fat_pct: string | null;
-  lower_body_fat_pct: string | null;
-  fat_free_mass_kg: string | null;
+  upper_body_fat_pct?: string | null;
+  lower_body_fat_pct?: string | null;
+  fat_free_mass_kg?: string | null;
   muscle_mass_kg: string;
-  bone_mass_kg: string | null;
-  metabolic_age: number | null;
-  visceral_fat: string | null;
-  water_pct: string | null;
-  waist_cm: string | null;
-  hip_cm: string | null;
-  chest_cm: string | null;
-  cephalic_cm: string | null;
-  neck_cm: string | null;
-  relaxed_arm_midpoint_cm: string | null;
-  contracted_arm_midpoint_cm: string | null;
-  forearm_cm: string | null;
-  wrist_cm: string | null;
-  mesosternal_cm: string | null;
-  umbilical_cm: string | null;
-  biacromial_cm: string | null;
-  biiliocrestal_cm: string | null;
-  foot_length_cm: string | null;
-  thorax_transverse_cm: string | null;
-  thorax_anteroposterior_cm: string | null;
-  humerus_biepicondylar_cm: string | null;
-  wrist_bistyloid_cm: string | null;
-  femur_biepicondylar_cm: string | null;
-  bimaleolar_cm: string | null;
-  foot_transverse_cm: string | null;
-  hand_length_cm: string | null;
-  hand_transverse_cm: string | null;
-  arm_left_cm: string | null;
-  arm_right_cm: string | null;
-  mid_thigh_cm: string | null;
-  calf_cm: string | null;
-  thigh_left_cm: string | null;
-  thigh_right_cm: string | null;
-  calf_left_cm: string | null;
-  calf_right_cm: string | null;
-  subscapular_fold_mm: string | null;
-  triceps_fold_mm: string | null;
-  biceps_fold_mm: string | null;
-  iliac_crest_fold_mm: string | null;
-  supraspinal_fold_mm: string | null;
-  abdominal_fold_mm: string | null;
-  front_thigh_fold_mm: string | null;
-  medial_calf_fold_mm: string | null;
-  mid_axillary_fold_mm: string | null;
-  pectoral_fold_mm: string | null;
-  notes: string;
-  recorded_by_user_id: number | null;
+  bone_mass_kg?: string | null;
+  metabolic_age?: number | null;
+  visceral_fat?: string | null;
+  water_pct?: string | null;
+  waist_cm?: string | null;
+  hip_cm?: string | null;
+  chest_cm?: string | null;
+  cephalic_cm?: string | null;
+  neck_cm?: string | null;
+  relaxed_arm_midpoint_cm?: string | null;
+  contracted_arm_midpoint_cm?: string | null;
+  forearm_cm?: string | null;
+  wrist_cm?: string | null;
+  mesosternal_cm?: string | null;
+  umbilical_cm?: string | null;
+  biacromial_cm?: string | null;
+  biiliocrestal_cm?: string | null;
+  foot_length_cm?: string | null;
+  thorax_transverse_cm?: string | null;
+  thorax_anteroposterior_cm?: string | null;
+  humerus_biepicondylar_cm?: string | null;
+  wrist_bistyloid_cm?: string | null;
+  femur_biepicondylar_cm?: string | null;
+  bimaleolar_cm?: string | null;
+  foot_transverse_cm?: string | null;
+  hand_length_cm?: string | null;
+  hand_transverse_cm?: string | null;
+  arm_left_cm?: string | null;
+  arm_right_cm?: string | null;
+  mid_thigh_cm?: string | null;
+  calf_cm?: string | null;
+  thigh_left_cm?: string | null;
+  thigh_right_cm?: string | null;
+  calf_left_cm?: string | null;
+  calf_right_cm?: string | null;
+  subscapular_fold_mm?: string | null;
+  triceps_fold_mm?: string | null;
+  biceps_fold_mm?: string | null;
+  iliac_crest_fold_mm?: string | null;
+  supraspinal_fold_mm?: string | null;
+  abdominal_fold_mm?: string | null;
+  front_thigh_fold_mm?: string | null;
+  medial_calf_fold_mm?: string | null;
+  mid_axillary_fold_mm?: string | null;
+  pectoral_fold_mm?: string | null;
+  notes?: string;
+  recorded_by_user_id?: number | null;
   appointment_id?: number | null;
 }
 

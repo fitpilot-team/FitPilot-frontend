@@ -15,6 +15,7 @@ import { useUser, useUpdateProfilePicture, useUpdateUser } from '@/features/user
 import { useAuthSessions, useRevokeAuthSession, useLogoutAllAuthSessions } from '@/features/auth/queries';
 import { AuthSession } from '@/features/auth/types';
 import { CancelSubscriptionModal } from '@/components/profile/CancelSubscriptionModal';
+import { normalizePhoneToE164 } from '@/utils/phone';
 
 
 const DAYS = [
@@ -188,10 +189,14 @@ const getApiErrorMessage = (error: unknown) => {
         typeof error.response.data === 'object'
     ) {
         const responseData = error.response.data as {
-            message?: string;
+            message?: string | string[];
             error?: string;
             detail?: string;
         };
+
+        if (Array.isArray(responseData.message)) {
+            return responseData.message.filter(Boolean).join(', ') || null;
+        }
 
         return responseData.message || responseData.error || responseData.detail || null;
     }
@@ -416,6 +421,19 @@ export function ProfilePage() {
 
     const handleSaveProfile = async () => {
         if (!userId) return;
+
+        const rawPhone = formData.phone_number.trim();
+        let normalizedPhone: string | undefined;
+
+        if (rawPhone) {
+            const normalizedE164Phone = normalizePhoneToE164(rawPhone);
+            if (!normalizedE164Phone) {
+                toast.error('El telefono debe estar en formato E.164 (ej. +5218114684648).');
+                return;
+            }
+
+            normalizedPhone = normalizedE164Phone;
+        }
         
         try {
             await updateUserMutation.mutateAsync({
@@ -423,15 +441,19 @@ export function ProfilePage() {
                 data: {
                     name: formData.name,
                     lastname: formData.lastname,
-                    phone_number: formData.phone_number
+                    phone_number: normalizedPhone
                 }
             });
+            setFormData((previousData) => ({
+                ...previousData,
+                phone_number: normalizedPhone ?? '',
+            }));
             setIsEditing(false);
             setShowToast(true);
             setTimeout(() => setShowToast(false), 2000);
         } catch (error) {
             console.error("Failed to update profile", error);
-            // Optionally add error toast here
+            toast.error(getApiErrorMessage(error) || 'No se pudo actualizar el perfil.');
         }
     };
 

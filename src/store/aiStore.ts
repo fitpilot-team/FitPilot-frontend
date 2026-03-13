@@ -77,7 +77,11 @@ interface AIStoreActions {
 
   // Mode selection
   setCreationMode: (mode: CreationMode) => void;
-  setSelectedClient: (clientId: string | null, clientName: string | null) => void;
+  setSelectedClient: (
+    clientId: string | null,
+    clientName: string | null,
+    derivedAge?: number
+  ) => void;
   setTemplateName: (name: string) => void;
 
   // Interview validation
@@ -205,12 +209,20 @@ export const useAIStore = create<AIStore>()(
           set({ creationMode: mode });
         },
 
-        setSelectedClient: (clientId: string | null, clientName: string | null) => {
-          set({
+        setSelectedClient: (
+          clientId: string | null,
+          clientName: string | null,
+          derivedAge?: number
+        ) => {
+          set((state) => ({
             selectedClientId: clientId,
             selectedClientName: clientName,
             interviewValidation: null,
-          });
+            answers: {
+              ...state.answers,
+              age: derivedAge,
+            },
+          }));
         },
 
         setTemplateName: (name: string) => {

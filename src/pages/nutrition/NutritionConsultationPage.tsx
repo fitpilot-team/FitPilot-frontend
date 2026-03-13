@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Clock,
@@ -42,11 +42,13 @@ import {
   useClientHistory,
   useSaveClientMetric,
 } from "@/features/client-history/queries";
+import { buildClientMetricSnapshot } from "@/features/client-history/metricSnapshot";
 import { useAudioRecorder } from "@/features/consultation/hooks/useAudioRecorder";
 import { useTranscribeAudio } from "@/features/consultation/queries";
 import { clientInterviewsApi } from "@/services/client-interviews";
 import type { ClientInterviewUpdate } from "@/types/client";
 import type { AppointmentDraftJsonState } from "@/features/appointments/types";
+import { calculateAgeFromDateOfBirth } from "@/utils/dateOfBirth";
 import { Loader2, Mic } from "lucide-react";
 
 type TrainingProfileState = ClientInterviewUpdate;
@@ -84,14 +86,18 @@ const joinArrayForInput = (value?: Array<string | number>): string => {
   return value.join(", ");
 };
 
-const normalizeTrainingProfile = (raw: any): TrainingProfileState => {
+const normalizeTrainingProfile = (
+  raw: any,
+  derivedAge?: number,
+): TrainingProfileState => {
   if (!raw || typeof raw !== "object") {
-    return { ...DEFAULT_TRAINING_PROFILE };
+    return { ...DEFAULT_TRAINING_PROFILE, age: derivedAge };
   }
 
   return {
     ...DEFAULT_TRAINING_PROFILE,
     ...raw,
+    age: derivedAge,
     experience_level:
       raw.experience_level || DEFAULT_TRAINING_PROFILE.experience_level,
     exercise_variety:
@@ -107,6 +113,7 @@ const normalizeTrainingProfile = (raw: any): TrainingProfileState => {
 
 const buildTrainingInterviewPayload = (
   profile: TrainingProfileState,
+  derivedAge?: number,
 ): ClientInterviewUpdate => ({
   document_id: profile.document_id?.trim() || undefined,
   phone: profile.phone?.trim() || undefined,
@@ -116,7 +123,7 @@ const buildTrainingInterviewPayload = (
   insurance_provider: profile.insurance_provider?.trim() || undefined,
   policy_number: profile.policy_number?.trim() || undefined,
   experience_level: profile.experience_level || undefined,
-  age: profile.age ?? undefined,
+  age: derivedAge,
   gender: profile.gender || undefined,
   occupation: profile.occupation?.trim() || undefined,
   weight_kg: profile.weight_kg ?? undefined,
@@ -158,6 +165,7 @@ const buildTrainingInterviewPayload = (
 export function NutritionConsultationPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     professional,
     userData,
@@ -204,9 +212,19 @@ export function NutritionConsultationPage() {
   const client = clientsList.find(
     (c) => Number(c.id) === Number(appointment?.client_id),
   );
+  const derivedClientAge = useMemo(
+    () => calculateAgeFromDateOfBirth(client?.date_of_birth),
+    [client?.date_of_birth],
+  );
+  const isClientIntakeCompleted =
+    client?.onboarding_status?.toLowerCase() === "completed";
 
   // Fetch client history for medical conditions
   const { data: clientHistory } = useClientHistory(appointment?.client_id);
+  const latestMetricSnapshot = useMemo(
+    () => buildClientMetricSnapshot(clientHistory?.client_metrics || []),
+    [clientHistory?.client_metrics],
+  );
 
   const medicalConditions =
     clientHistory?.client_records?.[0]?.medical_conditions;
@@ -452,7 +470,7 @@ export function NutritionConsultationPage() {
     try {
       await clientInterviewsApi.updateInterview(
         String(appointment.client_id),
-        buildTrainingInterviewPayload(trainingProfile),
+        buildTrainingInterviewPayload(trainingProfile, derivedClientAge),
       );
       setTrainingSyncWarning(null);
       setTrainingProfileDirty(false);
@@ -466,6 +484,19 @@ export function NutritionConsultationPage() {
       setIsSyncingTrainingProfile(false);
     }
   };
+
+  useEffect(() => {
+    setTrainingProfile((prev) => {
+      if (prev.age === derivedClientAge) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        age: derivedClientAge,
+      };
+    });
+  }, [derivedClientAge]);
 
   // Effect to recalculate
   useEffect(() => {
@@ -673,7 +704,9 @@ export function NutritionConsultationPage() {
         if (state.targetMacros) setTargetMacros(state.targetMacros);
         if (state.seconds) setSeconds(state.seconds);
         if (state.trainingProfile) {
-          setTrainingProfile(normalizeTrainingProfile(state.trainingProfile));
+          setTrainingProfile(
+            normalizeTrainingProfile(state.trainingProfile, derivedClientAge),
+          );
           setTrainingProfileDirty(false);
           trainingProfileHydratedRef.current = true;
           loadedRemoteTrainingProfileRef.current = appointment?.client_id
@@ -763,7 +796,9 @@ export function NutritionConsultationPage() {
     clientInterviewsApi
       .getInterview(clientId)
       .then((remoteProfile) => {
-        setTrainingProfile(normalizeTrainingProfile(remoteProfile));
+        setTrainingProfile(
+          normalizeTrainingProfile(remoteProfile, derivedClientAge),
+        );
         setTrainingProfileDirty(false);
         setTrainingSyncWarning(null);
       })
@@ -776,6 +811,7 @@ export function NutritionConsultationPage() {
       });
   }, [
     appointment?.client_id,
+    derivedClientAge,
     isLoadingDraft,
     existingDraft?.json_state?.trainingProfile,
   ]);
@@ -1584,6 +1620,36 @@ export function NutritionConsultationPage() {
         </div>
       </header>
 
+      {!isClientIntakeCompleted && client?.id ? (
+        <div className="w-full mx-auto px-4 mt-6">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  El cliente tiene intake pendiente.
+                </p>
+                <p className="text-sm text-amber-800">
+                  Completarlo mejora el contexto para consulta y generación de planes.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() =>
+                navigate(
+                  `/nutrition/clients/${client.id}/intake?returnTo=${encodeURIComponent(
+                    `${location.pathname}${location.search}`,
+                  )}`,
+                )
+              }
+              className="px-4 py-2 rounded-xl text-sm font-semibold bg-white text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors"
+            >
+              Completar intake
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <main className="w-full mx-auto px-4 mt-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Column - Client Info & Main Actions */}
@@ -1608,15 +1674,9 @@ export function NutritionConsultationPage() {
               }}
               nextGoal={clientGoals}
               latestMetrics={{
-                weight: clientHistory?.client_metrics?.[0]?.weight_kg
-                  ? Number(clientHistory.client_metrics[0].weight_kg)
-                  : undefined,
-                bodyFat: clientHistory?.client_metrics?.[0]?.body_fat_pct
-                  ? Number(clientHistory.client_metrics[0].body_fat_pct)
-                  : undefined,
-                muscleMass: clientHistory?.client_metrics?.[0]?.muscle_mass_kg
-                  ? Number(clientHistory.client_metrics[0].muscle_mass_kg)
-                  : undefined,
+                weight: latestMetricSnapshot.weight_kg ?? undefined,
+                bodyFat: latestMetricSnapshot.body_fat_pct ?? undefined,
+                muscleMass: latestMetricSnapshot.muscle_mass_kg ?? undefined,
               }}
               onOpenHistory={() => setShowHistoryModal(true)}
               onOpenGoals={() => {}}
@@ -2242,22 +2302,22 @@ export function NutritionConsultationPage() {
               >
                 <TmbCalculator
                   weight={
-                    Number(metrics.weight) ||
-                    (clientHistory?.client_metrics?.[0]?.weight_kg
-                      ? Number(clientHistory.client_metrics[0].weight_kg)
-                      : 0)
+                    metrics.weight.trim() !== "" &&
+                    Number.isFinite(Number(metrics.weight))
+                      ? Number(metrics.weight)
+                      : (latestMetricSnapshot.weight_kg ?? 0)
                   }
                   height={
-                    Number(metrics.height) ||
-                    (clientHistory?.client_metrics?.[0]?.height_cm
-                      ? Number(clientHistory.client_metrics[0].height_cm)
-                      : 0)
+                    metrics.height.trim() !== "" &&
+                    Number.isFinite(Number(metrics.height))
+                      ? Number(metrics.height)
+                      : (latestMetricSnapshot.height_cm ?? 0)
                   }
                   bodyFat={
-                    Number(metrics.body_fat_pct) ||
-                    (clientHistory?.client_metrics?.[0]?.body_fat_pct
-                      ? Number(clientHistory.client_metrics[0].body_fat_pct)
-                      : 0)
+                    metrics.body_fat_pct.trim() !== "" &&
+                    Number.isFinite(Number(metrics.body_fat_pct))
+                      ? Number(metrics.body_fat_pct)
+                      : (latestMetricSnapshot.body_fat_pct ?? 0)
                   }
                   gender={
                     clientHistory?.genre ||
@@ -2268,6 +2328,25 @@ export function NutritionConsultationPage() {
                   dateOfBirth={client?.date_of_birth}
                   onTdeeChange={setCalculatedTdee}
                 />
+                {derivedClientAge === undefined && client?.id ? (
+                  <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <p className="text-sm text-amber-900">
+                      Falta la fecha de nacimiento del cliente. La edad se toma solo desde base de datos para cálculos y contexto de IA.
+                    </p>
+                    <button
+                      onClick={() =>
+                        navigate(
+                          `/nutrition/clients/${client.id}/intake?returnTo=${encodeURIComponent(
+                            `${location.pathname}${location.search}`,
+                          )}`,
+                        )
+                      }
+                      className="px-4 py-2 rounded-xl text-sm font-semibold bg-white text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors"
+                    >
+                      Completar DOB en intake
+                    </button>
+                  </div>
+                ) : null}
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-3 bg-orange-50 text-orange-600 rounded-2xl">
                     <Activity className="w-6 h-6" />

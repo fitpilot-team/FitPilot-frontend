@@ -13,15 +13,11 @@
     "settings": "Settings",
     "nutrition": "Nutrition",
     "nutritionClients": "Clients",
+    "nutritionRecipes": "Recipes",
     "nutritionCreateDiet": "Create New Diet",
-    "nutritionMealBuilder": "Meal Builder",
+    "nutritionMenus": "Menus",
     "clientsMenus": "Client Menus",
     "clientPlans": "Client Plans"
-  },
-  "mealPlans": {
-    "overview": "Overview",
-    "builder": "Builder",
-    "templates": "Templates"
   },
   "clientPlansPage": {
     "title": "Client Plans",

@@ -1,32 +1,32 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
-import { useGetMealPlanById } from '@/features/meal-plan/queries';
 import { useGetExchangeGroups } from '@/features/exchange-groups/queries';
 import { useProfessionalClients } from '@/features/professional-clients/queries';
 import { useProfessional } from '@/contexts/ProfessionalContext';
 import { useGetFoodsByExchangeGroup } from '@/features/foods/queries';
 import { getFoodsByExchangeGroup } from '@/features/foods/api';
-import { useGetRecipes } from '@/features/recipe-foods/queries';
-import { RecipeFoodsService } from '@/features/recipe-foods/api';
+import { getRecipeById } from '@/features/recipes/api';
+import { useRecipeCatalog } from '@/features/recipes/queries';
 import { useGetMenuById, useCreateMenu, useGenerateMenuAI, useSaveMenuDraft, useUpdateMenuDraft } from '@/features/menus/queries';
-import { getDraftById } from '@/features/menus/api'; 
-// I need a way to get a single draft by ID. 
-// The user said: "get /v1/menus/draft" returns list. 
-// "despues se va actualizar con un patch, /v1/menus/draft/:id"
-// Usually there is a GET /v1/menus/draft/:id ? 
-// If not, I can filter from the list if the user didn't implement GET by ID.
-// The user request showed a GET for drafts (plural). 
-// Let's assume I need to fetch the list and find the draft or implement getDraftById. 
-// Users request image showed `getDrafts` taking params. It did not show `getDraftById`.
-// Safest bet: fetch all drafts for professional and find the one with the ID. 
-// OR simpler: The user said "el patch pide el id del draft, el id lo va a regresar el post".
-// I will implement a quick `useGetDraftById` that fetches all and filters, OR (better) ask the API if it supports it. 
-// Given the pattern, let's assume I can filter the list from `useGetDrafts`.
+import { getDraftById } from '@/features/menus/api';
 
-import { IFoodItem } from '@/features/foods/types';
-import { MacroSidebar, MacroStats, MicronutrientStats } from '@/features/meal-plan/components/MacroSidebar';
+import { FoodSearchResult, IFoodItem } from '@/features/foods/types';
+import { MacroSidebar, MacroStats, MicronutrientStats } from '@/features/menus/components/MacroSidebar';
+import {
+    AiHydrationWarning,
+    GenerateAiMenuResponse,
+    IMenuExchangeDraft,
+    IMenuMealDraft,
+    MenuBuilderFoodSelection,
+} from '@/features/menus/types';
+import {
+    buildCompleteMealExchanges,
+    buildGroupQuantitiesFromItems,
+    buildSelectedFoodsFromItems,
+    normalizeMealDraftsWithAllGroups,
+} from '@/features/menus/draftHydration';
 import { Menu } from '@headlessui/react';
 import { toast } from 'react-hot-toast';
 import { Modal } from '@/components/common/Modal';
@@ -53,7 +53,6 @@ import {
     Sparkles,
     Loader2
 } from 'lucide-react';
-import { IMealPlanMeal, IMealPlanExchange } from '@/features/meal-plan/types';
 import {
     DndContext,
     closestCenter,
@@ -87,25 +86,90 @@ const AI_MODELS = [
     { value: 'gemini//gemini-2.5-flash', label: 'Gemini - 2.5 Flash' },
 ];
 
+type IFoodSelection = MenuBuilderFoodSelection;
+
+const toRecipeIngredientFoodItem = (food: FoodSearchResult): IFoodItem => {
+    const baseServingSize = food.base_serving_size ?? 0;
+    const baseUnit = food.base_unit ?? 'g';
+    const exchangeGroupId = food.exchange_group_id ?? 0;
+
+    return {
+        id: food.id,
+        name: food.name,
+        brand: food.brand,
+        category_id: 0,
+        exchange_group_id: exchangeGroupId,
+        image_url: undefined,
+        is_recipe: false,
+        base_serving_size: baseServingSize,
+        base_unit: baseUnit,
+        gross_weight_g: null,
+        net_weight_g: null,
+        calories_kcal: food.calories_kcal ?? 0,
+        protein_g: food.protein_g ?? 0,
+        carbs_g: food.carbs_g ?? 0,
+        fat_g: food.fat_g ?? 0,
+        fiber_g: food.fiber_g ?? 0,
+        glycemic_index: null,
+        glycemic_load: null,
+        micronutrients: [],
+        food_categories: {
+            id: 0,
+            name: '',
+            icon: null,
+        },
+        exchange_groups: {
+            id: exchangeGroupId,
+            name: '',
+        },
+        food_nutrition_values: [
+            {
+                id: -food.id,
+                food_id: food.id,
+                data_source_id: 0,
+                calories_kcal: food.calories_kcal ?? 0,
+                protein_g: food.protein_g ?? 0,
+                carbs_g: food.carbs_g ?? 0,
+                fat_g: food.fat_g ?? 0,
+                base_serving_size: baseServingSize,
+                base_unit: baseUnit,
+                gross_weight_g: null,
+                net_weight_g: null,
+                state: 'active',
+                notes: null,
+                deleted_at: null,
+                created_at: null,
+                fiber_g: food.fiber_g ?? 0,
+                glycemic_index: null,
+                glycemic_load: null,
+                data_sources: {
+                    id: 0,
+                    name: '',
+                },
+                food_micronutrient_values: [],
+            },
+        ],
+        serving_units: food.serving_units,
+        updated_at: undefined,
+        deleted_at: null,
+    };
+};
+
 export function MenuCreationPage() {
     const [searchParams] = useSearchParams();
 
     const navigate = useNavigate();
+    const location = useLocation();
     const queryClient = useQueryClient();
-    const planId = Number(searchParams.get('planId'));
     const clientId = Number(searchParams.get('clientId'));
     const fromMenuId = Number(searchParams.get('fromMenuId'));
     const draftIdParam = searchParams.get('draftId');
 
     const { professional } = useProfessional();
-    const { data: plan, isLoading: planLoading } = useGetMealPlanById(planId);
     const { data: sourceMenu, isLoading: menuLoading } = useGetMenuById(fromMenuId);
     const { data: exchangeGroups } = useGetExchangeGroups();
     const { data: clients, isLoading: clientsLoading } = useProfessionalClients(professional?.sub || '');
 
-    // Fetch drafts to find the one we might be loading
-    // Optimization: In a real scenario, we'd want a specific getDraftById endpoint.
-    // For now, fetching list and filtering.
     const [isLoadingDraft, setIsLoadingDraft] = useState(false);
 
     useEffect(() => {
@@ -114,8 +178,9 @@ export function MenuCreationPage() {
                 // Reset state when no draft ID is present (New Menu Mode)
                 setDraftId(null);
                 setPeriod({ start: '', end: '' });
-                setLocalMeals([]); // Will trigger plan loading effect if applicable
+                setLocalMeals([]);
                 setSelectedFoods({});
+                setAiHydrationWarnings([]);
                 setIsAiGeneratedDraft(false);
                 setLastSavedHash('');
                 // If we have query params like clientId, they stay in URL, so we don't need to clear them from state derived from URL
@@ -134,9 +199,16 @@ export function MenuCreationPage() {
                     
                     if (data.period) setPeriod(data.period);
                     if (data.localMeals) {
-                        setLocalMeals(data.localMeals);
-                        if (data.localMeals.length > 0) {
-                            setActiveTabId(data.localMeals[0].id || null);
+                        const incomingMeals = data.localMeals as IMenuMealDraft[];
+                        const normalizedMeals = exchangeGroups?.length
+                            ? normalizeMealDraftsWithAllGroups({
+                                meals: incomingMeals,
+                                canonicalGroups: exchangeGroups,
+                            })
+                            : incomingMeals;
+                        setLocalMeals(normalizedMeals);
+                        if (normalizedMeals.length > 0) {
+                            setActiveTabId(normalizedMeals[0].id || null);
                         }
                     }
                     if (data.selectedFoods) {
@@ -149,6 +221,7 @@ export function MenuCreationPage() {
                     }
                     
                     setDraftId(draftIdParam); // draftIdParam is now string
+                    setAiHydrationWarnings([]);
                     if (draft.is_ai_generated) setIsAiGeneratedDraft(true);
                     
                     // If client is associated, maybe set it?
@@ -184,6 +257,7 @@ export function MenuCreationPage() {
 
     const [period, setPeriod] = useState({ start: '', end: '' });
     const [selectedFoods, setSelectedFoods] = useState<Record<string, IFoodSelection[]>>({}); // mealExchangeKey -> IFoodSelection[]
+    const [aiHydrationWarnings, setAiHydrationWarnings] = useState<AiHydrationWarning[]>([]);
     const [focusedMealId, setFocusedMealId] = useState<number | null>(null);
 
     // Template State
@@ -191,7 +265,7 @@ export function MenuCreationPage() {
 
     const [loadingRecipeMealId, setLoadingRecipeMealId] = useState<number | null>(null);
 
-    const [localMeals, setLocalMeals] = useState<IMealPlanMeal[]>([]);
+    const [localMeals, setLocalMeals] = useState<IMenuMealDraft[]>([]);
     const [activeTabId, setActiveTabId] = useState<number | null>(null);
     const [editingTabId, setEditingTabId] = useState<number | null>(null);
     const [renameValue, setRenameValue] = useState('');
@@ -345,131 +419,95 @@ export function MenuCreationPage() {
     const [isReusableModalOpen, setIsReusableModalOpen] = useState(false);
     const [reusableForm, setReusableForm] = useState({ title: '', description: '' });
 
-    useEffect(() => {
-        if (plan?.meal_plan_meals && localMeals.length === 0 && !fromMenuId) {
-            setLocalMeals(plan.meal_plan_meals);
-            if (plan.meal_plan_meals.length > 0) {
-                setActiveTabId(plan.meal_plan_meals[0].id || null);
-            }
-        }
-    }, [plan, localMeals.length, fromMenuId]);
-
     // Effect to load data from reusable menu
     useEffect(() => {
         if (sourceMenu && localMeals.length === 0 && exchangeGroups) {
-            const transformedMeals: IMealPlanMeal[] = [];
+            const transformedMeals: IMenuMealDraft[] = [];
             const newSelectedFoods: Record<string, IFoodSelection[]> = {};
 
             sourceMenu.menu_meals.forEach((meal, mealIdx) => {
-                // 1. Group items by exchange group
-                const exchangeGroupsInMeal: Record<number, number> = {}; // groupId -> sum(quantity)
-                
-                // Get the items array from the nested structure
                 const items = meal.menu_items_menu_items_menu_meal_idTomenu_meals || [];
-                
-                items.forEach(item => {
-                    if (item.exchange_group_id) {
-                        exchangeGroupsInMeal[item.exchange_group_id] = (exchangeGroupsInMeal[item.exchange_group_id] || 0) + (item.quantity || 0);
-                    }
+                const quantitiesByGroupId = buildGroupQuantitiesFromItems(items);
+                const exchanges = buildCompleteMealExchanges({
+                    canonicalGroups: exchangeGroups,
+                    quantitiesByGroupId,
+                    mealSeed: mealIdx + 1,
                 });
 
-                // 2. Create exchanges
-                const exchanges = Object.entries(exchangeGroupsInMeal).map(([groupIdStr, quantity]) => {
-                    return {
-                        id: -Math.floor(Math.random() * 1000000) - Number(groupIdStr), // Temp ID
-                        exchange_group_id: Number(groupIdStr),
-                        quantity: quantity, // Use the summed quantity (exchanges)
-                        meal_plan_meal_id: 0
-                    };
-                });
-
-                // 3. Create Meal
                 const newMealId = -Math.floor(Math.random() * 1000000) - mealIdx;
-                const newMeal: IMealPlanMeal = {
+                const newMeal: IMenuMealDraft = {
                     id: newMealId,
                     meal_name: meal.name,
                     sort_order: mealIdx + 1,
-                    meal_plan_exchanges: exchanges
+                    meal_plan_exchanges: exchanges,
                 };
                 transformedMeals.push(newMeal);
 
-                // 4. Populate selectedFoods for each exchange
-                exchanges.forEach(ex => {
-                    const key = `${newMealId}-${ex.id}`;
-                    const groupItems = items.filter(i => i.exchange_group_id === ex.exchange_group_id);
-                    const selections: IFoodSelection[] = [];
-
-                    groupItems.forEach(item => {
-                        if (item.food_id && item.foods) {
-                            const food = item.foods;
-                            // Calculate grams based on 'quantity' in menu_items. 
-                            // In menu_items, quantity is typically the number of equivalents (exchanges).
-                            // We need to calculate the GRAMS based on this equivalent count.
-                            
-                            const nutritionValue = food.food_nutrition_values?.[0]; // Should be included now
-                            const baseSize = parseFloat(String(nutritionValue?.base_serving_size)) || 100;
-
-                            // Assume item.quantity is EQUIVALENTS
-                            let calculatedExchanges = item.quantity || 0;
-                            let grams = 0;
-
-                            if (nutritionValue && baseSize > 0) {
-                                // Formula: Grams = Exchanges * BaseSize
-                                grams = calculatedExchanges * baseSize;
-                            } else {
-                                // Fallback if no nutrition info (shouldn't happen often)
-                                grams = calculatedExchanges * 100;
-                            }
-                           
-                            selections.push({
-                                foodId: food.id,
-                                grams: Number(grams.toFixed(1)),
-                                calculatedExchanges: calculatedExchanges,
-                                nutritionValueId: nutritionValue?.id,
-                                _foodRef: food,
-                                isFromRecipe: !!item.recipe_id
-                            });
-                        }
-                    });
-
-                    // Pad with empty selections if total selections < exchange quantity? 
-                    // Usually we don't enforce this strictly here, but good to have at least one or match count.
-                    // If no foods selected but exchange exists, add empty placeholders
-                    if (selections.length === 0) {
-                         const numSelectors = Math.ceil(ex.quantity);
-                         for(let i=0; i<numSelectors; i++) {
-                             selections.push({ grams: 0, calculatedExchanges: 0 });
-                         }
-                    }
-
-                    newSelectedFoods[key] = selections;
+                const { selectionsByKey } = buildSelectedFoodsFromItems({
+                    mealId: newMealId,
+                    mealName: meal.name || `Comida ${mealIdx + 1}`,
+                    exchanges,
+                    items,
                 });
+                Object.assign(newSelectedFoods, selectionsByKey);
             });
 
             setLocalMeals(transformedMeals);
             setSelectedFoods(newSelectedFoods);
+            setAiHydrationWarnings([]);
             if (transformedMeals.length > 0) {
                 setActiveTabId(transformedMeals[0].id || null);
             }
         }
     }, [sourceMenu, localMeals.length, exchangeGroups]);
 
+    useEffect(() => {
+        if (!exchangeGroups?.length) {
+            return;
+        }
+
+        setLocalMeals((prevMeals) => {
+            if (!prevMeals.length) {
+                return prevMeals;
+            }
+
+            const normalizedMeals = normalizeMealDraftsWithAllGroups({
+                meals: prevMeals,
+                canonicalGroups: exchangeGroups,
+            });
+
+            const hasChanged = prevMeals.some((meal, mealIndex) => {
+                const previousExchanges = meal.meal_plan_exchanges ?? [];
+                const normalizedExchanges = normalizedMeals[mealIndex]?.meal_plan_exchanges ?? [];
+                if (previousExchanges.length !== normalizedExchanges.length) {
+                    return true;
+                }
+
+                return previousExchanges.some((previousExchange, exchangeIndex) => {
+                    const normalizedExchange = normalizedExchanges[exchangeIndex];
+                    if (!normalizedExchange) {
+                        return true;
+                    }
+                    return (
+                        previousExchange.id !== normalizedExchange.id
+                        || previousExchange.exchange_group_id !== normalizedExchange.exchange_group_id
+                        || Number(previousExchange.quantity ?? 0) !== Number(normalizedExchange.quantity ?? 0)
+                    );
+                });
+            });
+
+            return hasChanged ? normalizedMeals : prevMeals;
+        });
+    }, [exchangeGroups, localMeals]);
+
     // Keep focusedMealId for compatibility with existing sidebar logic, sync with activeTabId
     useEffect(() => {
         setFocusedMealId(activeTabId);
     }, [activeTabId]);
 
-    interface IFoodSelection {
-        foodId?: number;
-        grams: number;
-        calculatedExchanges: number;
-        nutritionValueId?: number;
-        _foodRef?: IFoodItem; // Temporary ref for calculations
-        isFromRecipe?: boolean;
-        shouldAutoOpen?: boolean;
-    }
-
     const client = useMemo(() => clients?.find(c => c.id === clientId), [clients, clientId]);
+    const isClientIntakeCompleted =
+        client?.onboarding_status?.toLowerCase() === 'completed';
 
     const groupsMap = useMemo(() => {
         if (!exchangeGroups) return {};
@@ -607,16 +645,16 @@ export function MenuCreationPage() {
     );
 
     useEffect(() => {
-        if (!focusedMealId && plan?.meal_plan_meals?.[0]) {
-            setFocusedMealId(plan.meal_plan_meals[0].id || null);
+        if (!focusedMealId && localMeals[0]?.id) {
+            setFocusedMealId(localMeals[0].id || null);
         }
-    }, [plan, focusedMealId]);
+    }, [localMeals, focusedMealId]);
 
     // State moved up
 
 
     const handleAddTab = () => {
-        let newExchanges: IMealPlanExchange[] = [];
+        let newExchanges: IMenuExchangeDraft[] = [];
 
         if (localMeals.length > 0) {
             // Clone structure of the first meal (or currently active) to get exchange groups
@@ -636,7 +674,7 @@ export function MenuCreationPage() {
             }));
         }
 
-        const newMeal: IMealPlanMeal = {
+        const newMeal: IMenuMealDraft = {
             id: -Math.floor(Math.random() * 1000000), // temp ID
             meal_name: `Comida ${localMeals.length + 1}`,
             sort_order: localMeals.length + 1,
@@ -710,7 +748,6 @@ export function MenuCreationPage() {
 
         // Transform selectedFoods and localMeals for saving
         const menuData = {
-            meal_plan_id: planId || null,
             client_id: targetClientId,
             start_date: targetStartDate,
             end_date: targetEndDate,
@@ -722,7 +759,6 @@ export function MenuCreationPage() {
             alternate_menu_ids: alternateMenuIds,
             menu_meals: localMeals.map(meal => ({
                 name: meal.meal_name,
-                source_meal_plan_meal_id: meal.id && meal.id > 0 ? meal.id : null,
                 menu_items: (meal.meal_plan_exchanges || []).flatMap(ex => {
                     const key = `${meal.id}-${ex.id}`;
                     const selections = selectedFoods[key] || [];
@@ -733,7 +769,7 @@ export function MenuCreationPage() {
                         quantity: sel.grams,
                         equivalent_quantity: sel.calculatedExchanges,
                         serving_unit_id: null, // Default to grams for now
-                        recipe_id: null // Tracking recipe ID is not fully supported in local state yet
+                        recipe_id: sel.recipeId ?? null
                     }));
                 })
             }))
@@ -748,7 +784,7 @@ export function MenuCreationPage() {
                     navigate('/nutrition/meal-plans/reusable-menus');
                 } else {
                     toast.success('Menú guardado con éxito');
-                    navigate('/nutrition/meal-plans/overview');
+                    navigate('/client-plans');
                 }
             }
         });
@@ -781,11 +817,16 @@ export function MenuCreationPage() {
 
     const handleConfirmGenerateAI = async () => {
         if (!client) return;
+        if (!exchangeGroups?.length) {
+            toast.error('No se pudieron cargar los grupos de alimentos.');
+            return;
+        }
         setIsAiOptionsModalOpen(false);
         setIsProcessingAI(true);
+        setAiHydrationWarnings([]);
         
         try {
-            const aiData = await generateAIAsync({
+            const aiData: GenerateAiMenuResponse = await generateAIAsync({
                 client_id: client.id,
                 extra_notes: aiNotes || undefined,
                 language: 'ES', // Default
@@ -803,9 +844,12 @@ export function MenuCreationPage() {
 
             // 2. Fetch required foods
             const groupIds = new Set<number>();
-            aiData.menu_meals.forEach((meal: any) => {
-                meal.menu_items.forEach((item: any) => {
-                    if (item.exchange_group_id) groupIds.add(item.exchange_group_id);
+            aiData.menu_meals.forEach((meal) => {
+                meal.menu_items.forEach((item) => {
+                    const groupId = Number(item.exchange_group_id);
+                    if (Number.isInteger(groupId) && groupId > 0) {
+                        groupIds.add(groupId);
+                    }
                 });
             });
 
@@ -822,90 +866,41 @@ export function MenuCreationPage() {
             }));
 
             // 3. Process Meals
-            const transformedMeals: IMealPlanMeal[] = [];
+            const transformedMeals: IMenuMealDraft[] = [];
             const newSelectedFoods: Record<string, IFoodSelection[]> = {};
+            const warnings: AiHydrationWarning[] = [];
 
-             aiData.menu_meals.forEach((meal: any, mealIdx: number) => {
-                const exchangeGroupsInMeal: Record<number, number> = {}; 
+            aiData.menu_meals.forEach((meal, mealIdx) => {
                 const items = meal.menu_items || [];
-
-                items.forEach((item: any) => {
-                    if (item.exchange_group_id) {
-                        exchangeGroupsInMeal[item.exchange_group_id] = (exchangeGroupsInMeal[item.exchange_group_id] || 0) + (item.equivalent_quantity || 0);
-                    }
-                });
-
-                 const exchanges = Object.entries(exchangeGroupsInMeal).map(([groupIdStr, quantity]) => {
-                    return {
-                        id: -Math.floor(Math.random() * 1000000) - Number(groupIdStr) - mealIdx * 1000, 
-                        exchange_group_id: Number(groupIdStr),
-                        quantity: quantity, 
-                        meal_plan_meal_id: 0
-                    };
+                const quantitiesByGroupId = buildGroupQuantitiesFromItems(items);
+                const exchanges = buildCompleteMealExchanges({
+                    canonicalGroups: exchangeGroups ?? [],
+                    quantitiesByGroupId,
+                    mealSeed: mealIdx + 1,
                 });
 
                 const newMealId = -Math.floor(Math.random() * 1000000) - mealIdx;
-                const newMeal: IMealPlanMeal = {
+                transformedMeals.push({
                     id: newMealId,
                     meal_name: meal.name,
                     sort_order: mealIdx + 1,
-                    meal_plan_exchanges: exchanges
-                };
-                transformedMeals.push(newMeal);
-
-                exchanges.forEach(ex => {
-                    const key = `${newMealId}-${ex.id}`;
-                    const groupItems = items.filter((i: any) => i.exchange_group_id === ex.exchange_group_id);
-                    const selections: IFoodSelection[] = [];
-
-                    groupItems.forEach((item: any) => {
-                        const food = foodsMap[item.food_id];
-                        if (food) {
-                            const nutritionValue = food.food_nutrition_values?.[0];
-                            
-                            // Calculate grams from equivalents (item.quantity is grams? No, wait. item in AI response has equivalent_quantity)
-                            // In AI response: item.quantity (might be grams or count) and item.equivalent_quantity (exchanges).
-                            // The user said "grams coming back wrong". Trust equivalent_quantity.
-                            
-                            let calculatedExchanges = item.equivalent_quantity || 0;
-                            let grams = item.quantity || 0; 
-
-                            // Recalculate grams to be safe
-                            if (nutritionValue && calculatedExchanges > 0) {
-                                // We need avgCal for the group. 
-                                // groupsMap might not be fully available here as we are in async function?
-                                // We can try to find it from the fetched foods or pass it.
-                                // But simpler: The food usually knows its exchange group.
-                                // Fetching foods also returns exchange group data usually? 
-                                // Actually getFoodsByExchangeGroup returns IFoodItem which has exchange_groups nested?
-                                // Let's check IFoodItem interface. It has exchange_groups: IExchangeGroup.
-                                
-                                // group is not needed for new calculation
-                                const baseSize = parseFloat(String(nutritionValue.base_serving_size)) || 1;
-
-                                if (baseSize > 0) {
-                                    grams = calculatedExchanges * baseSize;
-                                }
-                            }
-
-                             selections.push({
-                                foodId: food.id,
-                                grams: Number(grams.toFixed(1)),
-                                calculatedExchanges: calculatedExchanges,
-                                nutritionValueId: nutritionValue?.id,
-                                _foodRef: food,
-                                isFromRecipe: false
-                            });
-                        }
-                    });
-                    
-                    newSelectedFoods[key] = selections;
+                    meal_plan_exchanges: exchanges,
                 });
 
-             });
+                const { selectionsByKey, warnings: hydrationWarnings } = buildSelectedFoodsFromItems({
+                    mealId: newMealId,
+                    mealName: meal.name || `Comida ${mealIdx + 1}`,
+                    exchanges,
+                    items,
+                    foodsById: foodsMap,
+                });
+                Object.assign(newSelectedFoods, selectionsByKey);
+                warnings.push(...hydrationWarnings);
+            });
 
              setLocalMeals(transformedMeals);
              setSelectedFoods(newSelectedFoods);
+             setAiHydrationWarnings(warnings);
              if (transformedMeals.length > 0) {
                  setActiveTabId(transformedMeals[0].id || null);
              }
@@ -924,7 +919,7 @@ export function MenuCreationPage() {
 
 
     // Only wait for loading if we are actually fetching something
-    const isGlobalLoading = (!!planId && planLoading) || (!!fromMenuId && menuLoading) || clientsLoading || isProcessingAI || isLoadingDraft;
+    const isGlobalLoading = (!!fromMenuId && menuLoading) || clientsLoading || isProcessingAI || isLoadingDraft;
 
     // Remove early return, handle loading inside main layout
 
@@ -974,12 +969,32 @@ export function MenuCreationPage() {
                                     </div>
                                     <div className="flex items-center gap-2 text-gray-400">
                                         <ArrowRight className="w-4 h-4" />
-                                        <span className="text-xs font-bold uppercase tracking-tight">Basado en plantilla</span>
+                                        <span className="text-xs font-bold uppercase tracking-tight">Menu personalizado</span>
                                     </div>
                                 </div>
                                 <h1 className="text-4xl font-black text-gray-900 tracking-tight leading-none">
                                     Creación de menú para <span className="text-emerald-600">{client?.name || 'Cliente'}</span>
                                 </h1>
+                                {client && !isClientIntakeCompleted ? (
+                                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                        <p className="text-sm font-medium text-amber-900">
+                                            Este cliente tiene intake pendiente. Completarlo mejora la generación del menú.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                navigate(
+                                                    `/nutrition/clients/${client.id}/intake?returnTo=${encodeURIComponent(
+                                                        `${location.pathname}${location.search}`,
+                                                    )}`,
+                                                )
+                                            }
+                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors"
+                                        >
+                                            Completar intake
+                                        </button>
+                                    </div>
+                                ) : null}
                             </div>
 
                             <div className="flex flex-wrap items-center gap-6">
@@ -987,7 +1002,7 @@ export function MenuCreationPage() {
                                     <div className="p-1.5 bg-gray-50 rounded-lg border border-gray-100">
                                         <Utensils className="w-4 h-4 text-emerald-500" />
                                     </div>
-                                    <span className="text-sm font-bold">{plan?.name}</span>
+                                    <span className="text-sm font-bold">{sourceMenu?.title || 'Menu personalizado'}</span>
                                 </div>
                                 
                                 {/* Client Selector Trigger */}
@@ -1217,6 +1232,32 @@ export function MenuCreationPage() {
                             )}
 
 
+                    {aiHydrationWarnings.length > 0 && (
+                        <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4">
+                            <p className="text-sm font-semibold text-amber-900">
+                                La IA generó el menú, pero algunos alimentos no se pudieron hidratar.
+                            </p>
+                            <p className="text-xs text-amber-800 mt-1">
+                                Se registraron {aiHydrationWarnings.length} incidencias. Revisa y ajusta manualmente los grupos afectados.
+                            </p>
+                            <div className="mt-3 space-y-1">
+                                {aiHydrationWarnings.slice(0, 5).map((warning, index) => (
+                                    <p
+                                        key={`${warning.reason}-${warning.meal_name}-${warning.exchange_group_id ?? 'na'}-${warning.food_id ?? 'na'}-${index}`}
+                                        className="text-xs text-amber-900"
+                                    >
+                                        {warning.meal_name}: {warning.message}
+                                    </p>
+                                ))}
+                                {aiHydrationWarnings.length > 5 && (
+                                    <p className="text-xs text-amber-700">
+                                        +{aiHydrationWarnings.length - 5} incidencias adicionales.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
 
                     {/* Main Content Area */}
                     <div className="space-y-8">
@@ -1327,7 +1368,8 @@ export function MenuCreationPage() {
 onSelect={async (recipeId) => {
                                                     if (meal.id) setLoadingRecipeMealId(meal.id);
                                                     try {
-                                                        const recipeFoods = await RecipeFoodsService.getByRecipeId(recipeId);
+                                                        const selectedRecipe = await getRecipeById(recipeId);
+                                                        const recipeFoods = selectedRecipe.ingredients;
                                                         
                                                         // Clone current state to modify
                                                         const updatedMeals = [...localMeals];
@@ -1342,19 +1384,19 @@ onSelect={async (recipeId) => {
 
                                                         // Use Promise.all to handle async fetching for all items first
                                                         const processedFoods = await Promise.all(recipeFoods.map(async (rf) => {
-                                                            const partialFood = rf.foods;
+                                                            const partialFood = rf.food;
                                                             if (!partialFood) return null;
 
-                                                            let fullFood: IFoodItem = partialFood;
-                                                            // Fetch complete food details if needed
-                                                            if (!partialFood.food_nutrition_values || partialFood.food_nutrition_values.length === 0) {
+                                                            let fullFood = toRecipeIngredientFoodItem(partialFood);
+                                                            const exchangeGroupId = partialFood.exchange_group_id;
+                                                            if (exchangeGroupId) {
                                                                 try {
                                                                     const groupFoods = await queryClient.fetchQuery({
-                                                                        queryKey: ['foods', 'exchange-group', partialFood.exchange_group_id],
-                                                                        queryFn: () => getFoodsByExchangeGroup(partialFood.exchange_group_id),
+                                                                        queryKey: ['foods', 'exchange-group', exchangeGroupId],
+                                                                        queryFn: () => getFoodsByExchangeGroup(exchangeGroupId),
                                                                         staleTime: 1000 * 60 * 5
                                                                     });
-                                                                    fullFood = groupFoods.find(f => f.id === partialFood.id) || partialFood;
+                                                                    fullFood = groupFoods.find(f => f.id === partialFood.id) || fullFood;
                                                                 } catch (err) {
                                                                     console.error("Error fetching food details", err);
                                                                 }
@@ -1379,7 +1421,7 @@ onSelect={async (recipeId) => {
                                                             if (servingUnit) {
                                                                 grams = (parseFloat(String(rf.quantity)) || 0) * (parseFloat(String(servingUnit.gram_equivalent)) || 0);
                                                             } else {
-                                                                grams = (parseFloat(String(rf.quantity)) || 0) * 100; // Default assumption if no unit
+                                                                grams = parseFloat(String(rf.quantity)) || 0;
                                                             }
 
                                                             const baseSize = parseFloat(String(nutritionValue?.base_serving_size)) || 1;
@@ -1425,6 +1467,9 @@ onSelect={async (recipeId) => {
                                                                 calculatedExchanges: calculatedExchanges,
                                                                 nutritionValueId: nutritionValue?.id,
                                                                 _foodRef: fullFood,
+                                                                recipeId: selectedRecipe.id,
+                                                                recipeName: selectedRecipe.name,
+                                                                recipeImageUrl: selectedRecipe.image_url,
                                                                 isFromRecipe: true
                                                             };
                                                         });
@@ -1526,7 +1571,7 @@ onSelect={async (recipeId) => {
                                                             </span>
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            {planId && !fromMenuId && ex.quantity > 0 ? (
+                                                            {ex.quantity > 0 ? (
                                                                 <>
                                                                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Objetivo:</span>
                                                                     <span className="px-3 py-1 bg-white rounded-full border border-gray-100 text-xs font-black text-emerald-600 shadow-sm">
@@ -2164,7 +2209,7 @@ function RecipeSelector({
     onSelect: (recipeId: number) => void;
     isLoading?: boolean;
 }) {
-    const { data: recipes, isLoading: isRecipesLoading } = useGetRecipes();
+    const { data: recipes, isLoading: isRecipesLoading } = useRecipeCatalog('all');
     const [isOpen, setIsOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -2278,13 +2323,22 @@ function RecipeSelector({
                                             }
                                         `}
                                     >
-                                        {/* Placeholder Image Area */}
                                         <div className="aspect-4/3 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center mb-4 relative overflow-hidden">
-                                            <div className="absolute inset-0 opacity-10" style={{
-                                                backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)',
-                                                backgroundSize: '16px 16px'
-                                            }} />
-                                            <ChefHat className={`w-12 h-12 ${idx === selectedIndex ? 'text-emerald-600' : 'text-emerald-300'} transition-colors duration-300`} />
+                                            {recipe.image_url ? (
+                                                <img
+                                                    src={recipe.image_url}
+                                                    alt={recipe.name}
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            ) : (
+                                                <>
+                                                    <div className="absolute inset-0 opacity-10" style={{
+                                                        backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)',
+                                                        backgroundSize: '16px 16px'
+                                                    }} />
+                                                    <ChefHat className={`w-12 h-12 ${idx === selectedIndex ? 'text-emerald-600' : 'text-emerald-300'} transition-colors duration-300`} />
+                                                </>
+                                            )}
                                         </div>
 
                                         <div className="px-2 pb-2">
@@ -2315,7 +2369,7 @@ function RecipeSelector({
 }
 
 interface SortableMealTabProps {
-    meal: IMealPlanMeal;
+    meal: IMenuMealDraft;
     activeTabId: number | null;
     setActiveTabId: (id: number | null) => void;
     editingTabId: number | null;

@@ -1,5 +1,5 @@
 import { nutritionApi } from "@/api/clients/nutrition.client";
-import { IFoodItem } from "./types";
+import { FoodSearchResult, IFoodItem } from "./types";
 
 /**
  * Fetches foods belonging to a specific exchange group.
@@ -16,5 +16,20 @@ export const getFoodsByExchangeGroup = async (groupId: number): Promise<IFoodIte
  */
 export const getFoods = async (): Promise<IFoodItem[]> => {
     const { data } = await nutritionApi.get<IFoodItem[]>("/v1/foods");
+    return data;
+};
+
+export const searchFoods = async (
+    query: string,
+    professionalId?: number,
+    limit = 20,
+): Promise<FoodSearchResult[]> => {
+    const { data } = await nutritionApi.get<FoodSearchResult[]>("/v1/foods/search", {
+        params: {
+            q: query,
+            limit,
+            professionalId,
+        },
+    });
     return data;
 };

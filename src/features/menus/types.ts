@@ -3,7 +3,7 @@ import { IExchangeGroup } from '../exchange-groups/types';
 
 export interface IMenu {
     id: number;
-    meal_plan_id: number;
+    meal_plan_id?: number | null;
     client_id: number;
     start_date: string;
     end_date: string;
@@ -24,7 +24,7 @@ export interface IMenuMeal {
     id: number;
     menu_id: number;
     name: string;
-    source_meal_plan_meal_id: number;
+    source_meal_plan_meal_id?: number | null;
     // Mapping the complex key from the raw response
     menu_items_menu_items_menu_meal_idTomenu_meals: IMenuItem[];
 }
@@ -37,6 +37,11 @@ export interface IMenuItem {
     serving_unit_id: number | null;
     quantity: number;
     recipe_id: number | null;
+    recipe_summary?: {
+        id: number;
+        title: string;
+        image_url: string | null;
+    } | null;
     foods: IFoodItem;
     exchange_groups: IExchangeGroup;
     equivalent_quantity: number;
@@ -85,4 +90,64 @@ export interface GenerateAiMenuDto {
     language?: string;
     data_system?: string;
     model?: string;
+}
+
+export interface GenerateAiMenuItem {
+    exchange_group_id: number | null;
+    food_id: number | null;
+    quantity: number;
+    equivalent_quantity: number;
+    food_name?: string;
+}
+
+export interface GenerateAiMenuMeal {
+    name: string;
+    menu_items: GenerateAiMenuItem[];
+}
+
+export interface GenerateAiMenuResponse {
+    client_id: number;
+    start_date: string;
+    end_date: string;
+    menu_meals: GenerateAiMenuMeal[];
+}
+
+export interface AiHydrationWarning {
+    meal_name: string;
+    exchange_group_id?: number;
+    food_id?: number;
+    reason: 'missing_food' | 'missing_exchange_group';
+    message: string;
+}
+
+export interface MenuBuilderFoodSelection {
+    foodId?: number;
+    grams: number;
+    calculatedExchanges: number;
+    nutritionValueId?: number;
+    _foodRef?: IFoodItem;
+    recipeId?: number;
+    recipeName?: string;
+    recipeImageUrl?: string | null;
+    isFromRecipe?: boolean;
+    shouldAutoOpen?: boolean;
+}
+
+export interface IMenuExchangeDraft {
+    id?: number;
+    exchange_group_id: number;
+    quantity: number;
+    meal_plan_meal_id?: number;
+    updated_at?: string;
+    deleted_at?: string | null;
+    exchange_group?: IExchangeGroup;
+}
+
+export interface IMenuMealDraft {
+    id?: number;
+    meal_name?: string;
+    sort_order?: number;
+    meal_plan_exchanges?: IMenuExchangeDraft[];
+    updated_at?: string;
+    deleted_at?: string | null;
 }

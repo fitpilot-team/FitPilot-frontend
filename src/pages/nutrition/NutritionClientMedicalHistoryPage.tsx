@@ -318,7 +318,7 @@ export function NutritionClientMedicalHistoryPage() {
           created_at: h.logged_at,
           updated_at: h.logged_at,
         });
-      if (h.metabolic_age !== null)
+      if (h.metabolic_age !== null && h.metabolic_age !== undefined)
         normalized.push({
           id: h.id + "_metabolic_age",
           client_id: h.user_id.toString(),
