@@ -6,9 +6,4 @@ export class RecipeFoodsService {
         const response = await nutritionApi.get<IRecipeFood[]>(`/v1/recipe-foods/recipe/${recipeId}`);
         return response.data;
     }
-
-    static async getRecipes(): Promise<import('./types').IRecipe[]> {
-        const response = await nutritionApi.get<import('./types').IRecipe[]>('/v1/recipes');
-        return response.data;
-    }
 }

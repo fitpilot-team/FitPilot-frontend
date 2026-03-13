@@ -7,12 +7,12 @@ import { useProfessionalClients } from '@/features/professional-clients/queries'
 import { useProfessional } from '@/contexts/ProfessionalContext';
 import { useGetFoodsByExchangeGroup } from '@/features/foods/queries';
 import { getFoodsByExchangeGroup } from '@/features/foods/api';
-import { useGetRecipes } from '@/features/recipe-foods/queries';
-import { RecipeFoodsService } from '@/features/recipe-foods/api';
+import { getRecipeById } from '@/features/recipes/api';
+import { useRecipeCatalog } from '@/features/recipes/queries';
 import { useGetMenuById, useCreateMenu, useGenerateMenuAI, useSaveMenuDraft, useUpdateMenuDraft } from '@/features/menus/queries';
 import { getDraftById } from '@/features/menus/api';
 
-import { IFoodItem } from '@/features/foods/types';
+import { FoodSearchResult, IFoodItem } from '@/features/foods/types';
 import { MacroSidebar, MacroStats, MicronutrientStats } from '@/features/menus/components/MacroSidebar';
 import {
     AiHydrationWarning,
@@ -87,6 +87,73 @@ const AI_MODELS = [
 ];
 
 type IFoodSelection = MenuBuilderFoodSelection;
+
+const toRecipeIngredientFoodItem = (food: FoodSearchResult): IFoodItem => {
+    const baseServingSize = food.base_serving_size ?? 0;
+    const baseUnit = food.base_unit ?? 'g';
+    const exchangeGroupId = food.exchange_group_id ?? 0;
+
+    return {
+        id: food.id,
+        name: food.name,
+        brand: food.brand,
+        category_id: 0,
+        exchange_group_id: exchangeGroupId,
+        image_url: undefined,
+        is_recipe: false,
+        base_serving_size: baseServingSize,
+        base_unit: baseUnit,
+        gross_weight_g: null,
+        net_weight_g: null,
+        calories_kcal: food.calories_kcal ?? 0,
+        protein_g: food.protein_g ?? 0,
+        carbs_g: food.carbs_g ?? 0,
+        fat_g: food.fat_g ?? 0,
+        fiber_g: food.fiber_g ?? 0,
+        glycemic_index: null,
+        glycemic_load: null,
+        micronutrients: [],
+        food_categories: {
+            id: 0,
+            name: '',
+            icon: null,
+        },
+        exchange_groups: {
+            id: exchangeGroupId,
+            name: '',
+        },
+        food_nutrition_values: [
+            {
+                id: -food.id,
+                food_id: food.id,
+                data_source_id: 0,
+                calories_kcal: food.calories_kcal ?? 0,
+                protein_g: food.protein_g ?? 0,
+                carbs_g: food.carbs_g ?? 0,
+                fat_g: food.fat_g ?? 0,
+                base_serving_size: baseServingSize,
+                base_unit: baseUnit,
+                gross_weight_g: null,
+                net_weight_g: null,
+                state: 'active',
+                notes: null,
+                deleted_at: null,
+                created_at: null,
+                fiber_g: food.fiber_g ?? 0,
+                glycemic_index: null,
+                glycemic_load: null,
+                data_sources: {
+                    id: 0,
+                    name: '',
+                },
+                food_micronutrient_values: [],
+            },
+        ],
+        serving_units: food.serving_units,
+        updated_at: undefined,
+        deleted_at: null,
+    };
+};
 
 export function MenuCreationPage() {
     const [searchParams] = useSearchParams();
@@ -1301,7 +1368,8 @@ export function MenuCreationPage() {
 onSelect={async (recipeId) => {
                                                     if (meal.id) setLoadingRecipeMealId(meal.id);
                                                     try {
-                                                        const recipeFoods = await RecipeFoodsService.getByRecipeId(recipeId);
+                                                        const selectedRecipe = await getRecipeById(recipeId);
+                                                        const recipeFoods = selectedRecipe.ingredients;
                                                         
                                                         // Clone current state to modify
                                                         const updatedMeals = [...localMeals];
@@ -1316,19 +1384,19 @@ onSelect={async (recipeId) => {
 
                                                         // Use Promise.all to handle async fetching for all items first
                                                         const processedFoods = await Promise.all(recipeFoods.map(async (rf) => {
-                                                            const partialFood = rf.foods;
+                                                            const partialFood = rf.food;
                                                             if (!partialFood) return null;
 
-                                                            let fullFood: IFoodItem = partialFood;
-                                                            // Fetch complete food details if needed
-                                                            if (!partialFood.food_nutrition_values || partialFood.food_nutrition_values.length === 0) {
+                                                            let fullFood = toRecipeIngredientFoodItem(partialFood);
+                                                            const exchangeGroupId = partialFood.exchange_group_id;
+                                                            if (exchangeGroupId) {
                                                                 try {
                                                                     const groupFoods = await queryClient.fetchQuery({
-                                                                        queryKey: ['foods', 'exchange-group', partialFood.exchange_group_id],
-                                                                        queryFn: () => getFoodsByExchangeGroup(partialFood.exchange_group_id),
+                                                                        queryKey: ['foods', 'exchange-group', exchangeGroupId],
+                                                                        queryFn: () => getFoodsByExchangeGroup(exchangeGroupId),
                                                                         staleTime: 1000 * 60 * 5
                                                                     });
-                                                                    fullFood = groupFoods.find(f => f.id === partialFood.id) || partialFood;
+                                                                    fullFood = groupFoods.find(f => f.id === partialFood.id) || fullFood;
                                                                 } catch (err) {
                                                                     console.error("Error fetching food details", err);
                                                                 }
@@ -1353,7 +1421,7 @@ onSelect={async (recipeId) => {
                                                             if (servingUnit) {
                                                                 grams = (parseFloat(String(rf.quantity)) || 0) * (parseFloat(String(servingUnit.gram_equivalent)) || 0);
                                                             } else {
-                                                                grams = (parseFloat(String(rf.quantity)) || 0) * 100; // Default assumption if no unit
+                                                                grams = parseFloat(String(rf.quantity)) || 0;
                                                             }
 
                                                             const baseSize = parseFloat(String(nutritionValue?.base_serving_size)) || 1;
@@ -2138,7 +2206,7 @@ function RecipeSelector({
     onSelect: (recipeId: number) => void;
     isLoading?: boolean;
 }) {
-    const { data: recipes, isLoading: isRecipesLoading } = useGetRecipes();
+    const { data: recipes, isLoading: isRecipesLoading } = useRecipeCatalog('all');
     const [isOpen, setIsOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -2252,13 +2320,22 @@ function RecipeSelector({
                                             }
                                         `}
                                     >
-                                        {/* Placeholder Image Area */}
                                         <div className="aspect-4/3 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center mb-4 relative overflow-hidden">
-                                            <div className="absolute inset-0 opacity-10" style={{
-                                                backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)',
-                                                backgroundSize: '16px 16px'
-                                            }} />
-                                            <ChefHat className={`w-12 h-12 ${idx === selectedIndex ? 'text-emerald-600' : 'text-emerald-300'} transition-colors duration-300`} />
+                                            {recipe.image_url ? (
+                                                <img
+                                                    src={recipe.image_url}
+                                                    alt={recipe.name}
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            ) : (
+                                                <>
+                                                    <div className="absolute inset-0 opacity-10" style={{
+                                                        backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)',
+                                                        backgroundSize: '16px 16px'
+                                                    }} />
+                                                    <ChefHat className={`w-12 h-12 ${idx === selectedIndex ? 'text-emerald-600' : 'text-emerald-300'} transition-colors duration-300`} />
+                                                </>
+                                            )}
                                         </div>
 
                                         <div className="px-2 pb-2">

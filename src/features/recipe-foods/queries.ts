@@ -9,10 +9,3 @@ export const useGetRecipeFoods = (recipeId?: number) => {
         enabled: !!recipeId,
     });
 };
-
-export const useGetRecipes = () => {
-    return useQuery<import('./types').IRecipe[], Error>({
-        queryKey: ['recipes'],
-        queryFn: () => RecipeFoodsService.getRecipes(),
-    });
-};

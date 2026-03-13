@@ -12,7 +12,7 @@ import {
   ClipboardDocumentListIcon,
   ListBulletIcon,
 } from '@heroicons/react/24/outline';
-import { Calendar, Dumbbell, Utensils } from 'lucide-react';
+import { Calendar, ChefHat, Dumbbell, Utensils } from 'lucide-react';
 import fitPilotLogo from '../../assets/FitPilot-Logo.svg';
 import { useAuthStore } from '../../store/newAuthStore';
 import { useUIStore } from '../../store/uiStore';
@@ -40,6 +40,7 @@ const nutritionPrimaryItems: NavItem[] = [
 ];
 
 const nutritionConfig: NavItem[] = [
+  { nameKey: 'nutritionRecipes', href: '/nutrition/recipes', icon: ChefHat },
   { nameKey: 'nutritionMenus', href: '/nutrition/meal-plans', icon: ListBulletIcon },
 ];
 

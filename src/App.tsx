@@ -19,6 +19,8 @@ import { NutritionClientDetailPage } from './pages/nutrition/NutritionClientDeta
 import { NutritionClientMedicalHistoryPage } from './pages/nutrition/NutritionClientMedicalHistoryPage';
 import { NutritionConsultationPage } from './pages/nutrition/NutritionConsultationPage';
 import { NutritionClientIntakePage } from './pages/nutrition/NutritionClientIntakePage';
+import { NutritionRecipesPage } from './pages/nutrition/NutritionRecipesPage';
+import { NutritionRecipeEditorPage } from './pages/nutrition/NutritionRecipeEditorPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AuthLayout } from './components/layout/AuthLayout';
 import { MealPlansLayout } from './pages/nutrition/meal-plans/MealPlansLayout';
@@ -334,6 +336,9 @@ function App() {
           <Route path="agenda" element={<NutritionAgendaPage />} />
           <Route path="clients" element={<NutritionClientsPage />} />
           <Route path="clients/new" element={<RegisterClientPage />} />
+          <Route path="recipes" element={<NutritionRecipesPage />} />
+          <Route path="recipes/new" element={<NutritionRecipeEditorPage />} />
+          <Route path="recipes/:recipeId/edit" element={<NutritionRecipeEditorPage />} />
           <Route
             path="clients/:clientId/intake"
             element={
