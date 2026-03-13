@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import {
   Area,
@@ -11,14 +11,27 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowLeft, Calendar, X } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  ArrowLeft,
+  Calendar,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  X,
+} from "lucide-react";
 import { format, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { ClientMetric } from "@/services/client-metrics";
-import { ClientHealthMetric } from "@/features/client-history/types";
+import {
+  ClientHealthMetric,
+  MeasurementCalculationStatus,
+} from "@/features/client-history/types";
+import { useMeasurementDetail } from "@/features/client-history/queries";
 import { DatePicker } from "@/components/common/DatePicker";
 
-interface MeasurementRecordMetric {
+export interface MeasurementRecordMetric {
   id: string;
   metric_type: ClientMetric["metric_type"];
   value: number | string;
@@ -26,7 +39,8 @@ interface MeasurementRecordMetric {
   date: string;
 }
 
-interface MeasurementRecord {
+export interface MeasurementRecord {
+  measurementId?: string;
   rawDate: string;
   metrics: MeasurementRecordMetric[];
 }
@@ -50,6 +64,44 @@ interface MeasurementDetailsModalProps {
 }
 
 type TimeFilter = "all" | "1d" | "1w" | "1m" | "custom";
+type MeasurementDetailsTab = "measurements" | "calculations";
+type CalculationSubsectionId =
+  | "indicadores-antropometricos"
+  | "peso-teorico"
+  | "porcentaje-de-grasa"
+  | "componentes-corporales"
+  | "indicadores-de-frisancho";
+
+type CalculationRow = {
+  code: string;
+  label: string;
+  subsection: CalculationSubsectionId;
+  value: number | null;
+  unit: string | null;
+  status: MeasurementCalculationStatus;
+  method: string;
+  formulaVersion: string;
+  message?: string;
+  missingFields?: string[];
+};
+
+type FrisanchoCalculationDetails = {
+  ageRange?: { label?: string };
+  measurements?: {
+    relaxedArmMidpointCm?: number;
+    tricepsFoldMm?: number;
+  };
+  derived?: {
+    correctedArmMuscleAreaCm2?: number;
+    armMuscleCircumferenceCm?: number;
+  };
+  assessment?: {
+    percentileBand?: string;
+    classification?: string;
+    adequacyPctOfP50?: number;
+    approximatePercentile?: number | null;
+  };
+};
 
 const typeLabels: Record<ClientMetric["metric_type"], string> = {
   weight: "Peso",
@@ -161,6 +213,109 @@ const metricColors: Partial<Record<ClientMetric["metric_type"], string>> = {
   oxygen_saturation: "#0891b2",
 };
 
+const calculationSubsections: Array<{
+  id: CalculationSubsectionId;
+  label: string;
+  helperText: string;
+}> = [
+  {
+    id: "indicadores-antropometricos",
+    label: "Indicadores antropometricos",
+    helperText:
+      "Indicadores clinicos derivados de peso, cintura, cadera y estatura.",
+  },
+  {
+    id: "peso-teorico",
+    label: "Peso teorico",
+    helperText: "Estimaciones relacionadas con peso objetivo.",
+  },
+  {
+    id: "porcentaje-de-grasa",
+    label: "Porcentaje de grasa",
+    helperText:
+      "Resultado almacenado para composicion corporal al momento de guardar.",
+  },
+  {
+    id: "componentes-corporales",
+    label: "Componentes corporales",
+    helperText: "Desglose de masa grasa y masa libre de grasa.",
+  },
+  {
+    id: "indicadores-de-frisancho",
+    label: "Indicadores de Frisancho",
+    helperText:
+      "Indicadores antropometricos de referencia guardados en el run.",
+  },
+];
+
+const defaultCalculationSubsection = calculationSubsections[0].id;
+
+const calculationMeta: Record<
+  string,
+  { label: string; subsection: CalculationSubsectionId; order: number }
+> = {
+  bmi: {
+    label: "Indice de masa corporal",
+    subsection: "indicadores-antropometricos",
+    order: 1,
+  },
+  waist_hip_ratio: {
+    label: "Indice cintura-cadera",
+    subsection: "indicadores-antropometricos",
+    order: 2,
+  },
+  waist_height_ratio: {
+    label: "Indice cintura-estatura",
+    subsection: "indicadores-antropometricos",
+    order: 3,
+  },
+  ideal_weight_robinson: {
+    label: "Robinson",
+    subsection: "peso-teorico",
+    order: 1,
+  },
+  ideal_weight_metropolitan: {
+    label: "Metropolitan",
+    subsection: "peso-teorico",
+    order: 2,
+  },
+  ideal_weight_hamwi: {
+    label: "Hamwi",
+    subsection: "peso-teorico",
+    order: 3,
+  },
+  ideal_weight_lorentz: {
+    label: "Lorentz",
+    subsection: "peso-teorico",
+    order: 4,
+  },
+  ideal_weight_traditional: {
+    label: "Tradicional",
+    subsection: "peso-teorico",
+    order: 5,
+  },
+  body_fat_pct_bioimpedance: {
+    label: "Bioimpedancia",
+    subsection: "porcentaje-de-grasa",
+    order: 1,
+  },
+  fat_mass_kg: {
+    label: "Masa grasa",
+    subsection: "componentes-corporales",
+    order: 1,
+  },
+  lean_mass_kg: {
+    label: "Masa libre de grasa",
+    subsection: "componentes-corporales",
+    order: 2,
+  },
+  frisancho_indicators: {
+    label: "Referencias Frisancho",
+    subsection: "indicadores-de-frisancho",
+    order: 1,
+  },
+};
+
 const parseMetricDate = (dateValue: string) => {
   const datePart = dateValue.split("T")[0];
   return new Date(`${datePart}T00:00:00`);
@@ -169,6 +324,52 @@ const parseMetricDate = (dateValue: string) => {
 const formatMetricValue = (value: number | string) => {
   if (typeof value !== "number") return value;
   return value % 1 !== 0 ? value.toFixed(1) : value.toString();
+};
+
+const formatCalculationValue = (value: number | null) => {
+  if (value === null) return "--";
+  return value % 1 !== 0
+    ? value.toFixed(value >= 10 ? 1 : 2)
+    : value.toString();
+};
+
+const formatCalculationMethod = (method: string) =>
+  method
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const getStatusLabel = (status: MeasurementCalculationStatus) => {
+  if (status === "computed") return "Calculado";
+  if (status === "error") return "Error";
+  return "Pendiente";
+};
+
+const getStatusClassName = (status: MeasurementCalculationStatus) => {
+  if (status === "computed") {
+    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+  }
+  if (status === "error") {
+    return "bg-rose-50 text-rose-700 ring-1 ring-rose-100";
+  }
+  return "bg-amber-50 text-amber-700 ring-1 ring-amber-100";
+};
+
+const humanizeMissingField = (field: string) => {
+  const fieldLabels: Record<string, string> = {
+    weight_kg: "Peso",
+    height_cm: "Estatura",
+    body_fat_pct: "Grasa corporal",
+    waist_cm: "Cintura",
+    hip_cm: "Cadera",
+    relaxed_arm_midpoint_cm: "Brazo relajado",
+    triceps_fold_mm: "Pliegue tricipital",
+    genre: "Genero",
+    age_years: "Edad",
+  };
+
+  return fieldLabels[field] ?? field.replace(/_/g, " ");
 };
 
 export function MeasurementDetailsModal({
@@ -180,28 +381,141 @@ export function MeasurementDetailsModal({
 }: MeasurementDetailsModalProps) {
   const [selectedMetric, setSelectedMetric] =
     useState<MeasurementRecordMetric | null>(null);
+  const [activeTab, setActiveTab] =
+    useState<MeasurementDetailsTab>("measurements");
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeCalculationSubsection, setActiveCalculationSubsection] =
+    useState<CalculationSubsectionId>(defaultCalculationSubsection);
+
+  const measurementId = record?.measurementId;
+  const {
+    data: measurementDetail,
+    isLoading: isMeasurementLoading,
+    isError: isMeasurementError,
+  } = useMeasurementDetail(measurementId, isOpen && !!measurementId);
+
+  const calculationRows = useMemo<CalculationRow[]>(() => {
+    if (!measurementDetail) return [];
+
+    const warningsByCalculation = new Map(
+      measurementDetail.warnings.map((warning) => [
+        warning.calculation,
+        warning,
+      ]),
+    );
+
+    return Object.entries(measurementDetail.calculations)
+      .map(([code, calculation]) => {
+        const meta = calculationMeta[code] ?? {
+          label: code.replace(/_/g, " "),
+          subsection: "componentes-corporales" as CalculationSubsectionId,
+          order: 999,
+        };
+        const warning = warningsByCalculation.get(code);
+
+        return {
+          code,
+          label: meta.label,
+          subsection: meta.subsection,
+          value: calculation.value,
+          unit: calculation.unit,
+          status: calculation.status,
+          method: calculation.method,
+          formulaVersion: calculation.formulaVersion,
+          message: warning?.message,
+          missingFields:
+            warning?.missingFields ??
+            measurementDetail.missingFieldsByCalculation[code],
+        };
+      })
+      .sort((left, right) => {
+        const leftMeta = calculationMeta[left.code];
+        const rightMeta = calculationMeta[right.code];
+        const leftOrder = leftMeta?.order ?? 999;
+        const rightOrder = rightMeta?.order ?? 999;
+
+        if (left.subsection === right.subsection) {
+          return leftOrder - rightOrder;
+        }
+
+        return (
+          calculationSubsections.findIndex(
+            (section) => section.id === left.subsection,
+          ) -
+          calculationSubsections.findIndex(
+            (section) => section.id === right.subsection,
+          )
+        );
+      });
+  }, [measurementDetail]);
+
+  const calculationRowsBySubsection = useMemo(() => {
+    const grouped = Object.fromEntries(
+      calculationSubsections.map((section) => [
+        section.id,
+        [] as CalculationRow[],
+      ]),
+    ) as Record<CalculationSubsectionId, CalculationRow[]>;
+
+    calculationRows.forEach((row) => {
+      grouped[row.subsection].push(row);
+    });
+
+    return grouped;
+  }, [calculationRows]);
+
+  const availableCalculationSections = useMemo(
+    () =>
+      calculationSubsections.filter(
+        (section) => calculationRowsBySubsection[section.id].length > 0,
+      ),
+    [calculationRowsBySubsection],
+  );
 
   useEffect(() => {
     if (!isOpen) {
       setSelectedMetric(null);
+      setActiveTab("measurements");
       setHoveredDate(null);
       setTimeFilter("all");
       setCustomStartDate("");
       setCustomEndDate("");
+      setIsFullscreen(false);
+      setActiveCalculationSubsection(defaultCalculationSubsection);
     }
   }, [isOpen]);
 
   useEffect(() => {
     setSelectedMetric(null);
+    setActiveTab("measurements");
     setHoveredDate(null);
     setTimeFilter("all");
     setCustomStartDate("");
     setCustomEndDate("");
-  }, [record?.rawDate]);
+    setIsFullscreen(false);
+    setActiveCalculationSubsection(defaultCalculationSubsection);
+  }, [record?.measurementId, record?.rawDate]);
+
+  useEffect(() => {
+    if (availableCalculationSections.length === 0) {
+      if (activeCalculationSubsection !== defaultCalculationSubsection) {
+        setActiveCalculationSubsection(defaultCalculationSubsection);
+      }
+      return;
+    }
+
+    if (
+      !availableCalculationSections.some(
+        (section) => section.id === activeCalculationSubsection,
+      )
+    ) {
+      setActiveCalculationSubsection(availableCalculationSections[0].id);
+    }
+  }, [activeCalculationSubsection, availableCalculationSections]);
 
   if (!record) return null;
 
@@ -339,43 +653,449 @@ export function MeasurementDetailsModal({
     ? metricColors[selectedMetric.metric_type] || "#0f766e"
     : "#0f766e";
 
+  const activeCalculationSection =
+    calculationSubsections.find(
+      (section) => section.id === activeCalculationSubsection,
+    ) ?? calculationSubsections[0];
+  const activeCalculationRows =
+    calculationRowsBySubsection[activeCalculationSubsection] ?? [];
+  const frisanchoDetails = (measurementDetail?.calculations[
+    "frisancho_indicators"
+  ]?.details ?? null) as FrisanchoCalculationDetails | null;
+
+  const renderCalculationRowMessage = (row: CalculationRow) => {
+    if (row.missingFields && row.missingFields.length > 0) {
+      return `Faltantes: ${row.missingFields
+        .map((field) => humanizeMissingField(field))
+        .join(", ")}`;
+    }
+
+    return row.message ?? `Metodo ${formatCalculationMethod(row.method)}`;
+  };
+
+  const renderTableRows = (rows: CalculationRow[]) => (
+    <div className="mt-5 overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
+      <div className="grid grid-cols-[1.4fr_0.9fr_auto] border-b border-gray-100 bg-white px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
+          Calculo
+        </p>
+        <p className="text-right text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
+          Resultado
+        </p>
+        <p className="text-right text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
+          Estado
+        </p>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {rows.map((row) => (
+          <div
+            key={row.code}
+            className="grid grid-cols-[1.4fr_0.9fr_auto] items-center gap-3 px-4 py-3"
+          >
+            <div>
+              <p className="text-sm font-medium text-gray-700">{row.label}</p>
+              <p className="mt-1 text-xs text-gray-400">
+                {formatCalculationMethod(row.method)}
+              </p>
+            </div>
+            <p className="text-right text-sm font-semibold text-gray-900">
+              {formatCalculationValue(row.value)}
+              {row.unit ? (
+                <span className="ml-1 text-xs font-medium text-gray-400">
+                  {row.unit}
+                </span>
+              ) : null}
+            </p>
+            <div className="flex justify-end">
+              <span
+                className={`rounded-full px-2 py-1 text-[11px] font-semibold ${getStatusClassName(row.status)}`}
+              >
+                {getStatusLabel(row.status)}
+              </span>
+            </div>
+            <div className="col-span-3 text-xs text-gray-500">
+              {renderCalculationRowMessage(row)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderCalculationCard = (row: CalculationRow) => (
+    <div
+      key={row.code}
+      className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">{row.label}</p>
+          <p className="mt-1 text-xs text-gray-400">
+            {formatCalculationMethod(row.method)}
+          </p>
+        </div>
+        <span
+          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${getStatusClassName(row.status)}`}
+        >
+          {getStatusLabel(row.status)}
+        </span>
+      </div>
+
+      <div className="mt-4 flex items-end gap-2">
+        <span className="text-2xl font-semibold text-gray-950">
+          {formatCalculationValue(row.value)}
+        </span>
+        {row.unit ? (
+          <span className="pb-0.5 text-sm font-medium text-gray-400">
+            {row.unit}
+          </span>
+        ) : null}
+      </div>
+
+      <p className="mt-3 text-sm text-gray-500">
+        {renderCalculationRowMessage(row)}
+      </p>
+      <p className="mt-2 text-xs text-gray-400">Formula {row.formulaVersion}</p>
+    </div>
+  );
+
+  const renderActiveCalculationContent = () => {
+    if (activeCalculationRows.length === 0) {
+      return (
+        <div className="mt-5 rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
+          No hay resultados guardados en esta subseccion.
+        </div>
+      );
+    }
+
+    if (
+      activeCalculationSubsection === "peso-teorico" ||
+      activeCalculationSubsection === "porcentaje-de-grasa"
+    ) {
+      return renderTableRows(activeCalculationRows);
+    }
+
+    if (activeCalculationSubsection === "indicadores-de-frisancho") {
+      const row = activeCalculationRows[0];
+      return (
+        <div
+          className={`mt-5 rounded-2xl border p-5 ${
+            row.status === "computed"
+              ? "border-emerald-100 bg-emerald-50/60"
+              : "border-amber-100 bg-amber-50/60"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className={`rounded-full bg-white p-2 ${
+                row.status === "computed"
+                  ? "text-emerald-600"
+                  : "text-amber-600"
+              }`}
+            >
+              <AlertCircle className="h-4 w-4" />
+            </div>
+            <div className="w-full">
+              <p className="text-sm font-semibold text-gray-900">{row.label}</p>
+              <p className="mt-1 text-sm text-gray-600">
+                {renderCalculationRowMessage(row)}
+              </p>
+              {row.status === "computed" && frisanchoDetails ? (
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                      cAMA
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-gray-950">
+                      {frisanchoDetails.derived?.correctedArmMuscleAreaCm2?.toFixed(
+                        3,
+                      ) ?? formatCalculationValue(row.value)}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {row.unit ?? "cm2"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                      Percentil
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-gray-950">
+                      {frisanchoDetails.assessment?.percentileBand ?? "--"}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      ~P
+                      {frisanchoDetails.assessment?.approximatePercentile?.toFixed(
+                        1,
+                      ) ?? "--"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                      Adecuacion
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-gray-950">
+                      {frisanchoDetails.assessment?.adequacyPctOfP50?.toFixed(
+                        1,
+                      ) ?? "--"}
+                      %
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      vs P50 del grupo
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                      Clasificacion
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-gray-900">
+                      {frisanchoDetails.assessment?.classification ?? "--"}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {frisanchoDetails.ageRange?.label ?? "Referencia adulta"}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+              {row.status === "computed" && frisanchoDetails ? (
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                      Medidas usadas
+                    </p>
+                    <p className="mt-2 text-sm text-gray-700">
+                      Brazo relajado:{" "}
+                      {frisanchoDetails.measurements?.relaxedArmMidpointCm ??
+                        "--"}{" "}
+                      cm
+                    </p>
+                    <p className="mt-1 text-sm text-gray-700">
+                      Pliegue tricipital:{" "}
+                      {frisanchoDetails.measurements?.tricepsFoldMm ?? "--"} mm
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                      Derivados
+                    </p>
+                    <p className="mt-2 text-sm text-gray-700">
+                      Circunferencia muscular:{" "}
+                      {frisanchoDetails.derived?.armMuscleCircumferenceCm?.toFixed(
+                        3,
+                      ) ?? "--"}{" "}
+                      cm
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span
+                  className={`rounded-full px-2 py-1 text-[11px] font-semibold ${getStatusClassName(row.status)}`}
+                >
+                  {getStatusLabel(row.status)}
+                </span>
+                <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-gray-500 ring-1 ring-gray-200">
+                  Formula {row.formulaVersion}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+        {activeCalculationRows.map((row) => renderCalculationCard(row))}
+      </div>
+    );
+  };
+
+  const calculationOverviewContent = (() => {
+    if (!measurementId) {
+      return (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+          Las metricas de salud no generan este bloque de calculos.
+        </div>
+      );
+    }
+
+    if (isMeasurementLoading) {
+      return (
+        <div className="flex min-h-[260px] items-center justify-center rounded-2xl border border-gray-100 bg-gray-50">
+          <div className="flex items-center gap-3 text-sm font-medium text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Cargando calculos guardados...
+          </div>
+        </div>
+      );
+    }
+
+    if (isMeasurementError) {
+      return (
+        <div className="rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-8 text-center text-sm text-rose-700">
+          No se pudo cargar el detalle de calculos para este registro.
+        </div>
+      );
+    }
+
+    if (availableCalculationSections.length === 0) {
+      return (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+          Este registro no tiene calculos guardados.
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+        <div className="space-y-1">
+          {calculationSubsections.map((section) => {
+            const hasRows = calculationRowsBySubsection[section.id].length > 0;
+
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() =>
+                  hasRows && setActiveCalculationSubsection(section.id)
+                }
+                disabled={!hasRows}
+                className={`w-full rounded-xl px-4 py-2 text-left text-sm font-medium transition-colors ${
+                  activeCalculationSubsection === section.id
+                    ? "border border-nutrition-100 bg-nutrition-50 text-nutrition-700"
+                    : hasRows
+                      ? "text-gray-600 hover:bg-gray-50"
+                      : "cursor-not-allowed text-gray-300"
+                }`}
+              >
+                {section.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-gray-400">
+            Subseccion activa
+          </div>
+          <h5 className="text-xl font-bold text-gray-900">
+            {activeCalculationSection.label}
+          </h5>
+          <p className="mt-2 text-sm text-gray-500">
+            {activeCalculationSection.helperText}
+          </p>
+          {renderActiveCalculationContent()}
+        </div>
+      </div>
+    );
+  })();
+
+  const measurementsOverviewSection = (
+    <section className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="mb-5 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+        Selecciona una medicion para ver su grafica e historial completo.
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {record.metrics.map((metric) => (
+          <button
+            key={metric.id}
+            type="button"
+            onClick={() => {
+              setSelectedMetric(metric);
+              setHoveredDate(null);
+              setTimeFilter("all");
+              setCustomStartDate("");
+              setCustomEndDate("");
+            }}
+            className="flex min-h-[116px] flex-col justify-between rounded-3xl border border-gray-200 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nutrition-300"
+          >
+            <span className="text-sm font-medium text-gray-500">
+              {typeLabels[metric.metric_type] || metric.metric_type}
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-3xl font-semibold text-gray-950">
+                {formatMetricValue(metric.value)}
+              </span>
+              {metric.unit ? (
+                <span className="text-sm font-medium text-gray-400">
+                  {metric.unit}
+                </span>
+              ) : null}
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+
+  const calculationsOverviewSection = (
+    <section className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="mb-5 flex flex-col gap-4 border-b border-gray-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl bg-nutrition-100 p-2.5 text-nutrition-600">
+            <Activity className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gray-400">
+              Calculos guardados
+            </p>
+            <h4 className="mt-1 text-lg font-semibold text-gray-950">
+              Resumen analitico
+            </h4>
+            <p className="mt-1 text-sm text-gray-500">
+              Resultados generados cuando se guardo esta medicion.
+            </p>
+          </div>
+        </div>
+
+        {measurementDetail?.calculationRun ? (
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600">
+              Motor {measurementDetail.calculationRun.engineVersion}
+            </span>
+            <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">
+              {measurementDetail.calculationRun.status === "completed"
+                ? "Completado"
+                : measurementDetail.calculationRun.status === "partial"
+                  ? "Parcial"
+                  : measurementDetail.calculationRun.status}
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      {calculationOverviewContent}
+    </section>
+  );
+
   const overviewContent = (
     <>
       <div className="flex-1 overflow-y-auto bg-gray-50/60 px-5 py-5 sm:px-6 sm:py-6">
-        <div className="mb-5 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
-          Selecciona una medicion para ver su grafica e historial completo.
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {record.metrics.map((metric) => (
+        <div className="mb-5 flex flex-wrap gap-2">
+          {[
+            { id: "measurements", label: "Mediciones" },
+            { id: "calculations", label: "Calculos guardados" },
+          ].map((tab) => (
             <button
-              key={metric.id}
+              key={tab.id}
               type="button"
-              onClick={() => {
-                setSelectedMetric(metric);
-                setHoveredDate(null);
-                setTimeFilter("all");
-                setCustomStartDate("");
-                setCustomEndDate("");
-              }}
-              className="flex min-h-[116px] flex-col justify-between rounded-3xl border border-gray-200 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nutrition-300"
+              onClick={() => setActiveTab(tab.id as MeasurementDetailsTab)}
+              aria-pressed={activeTab === tab.id}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nutrition-300 ${
+                activeTab === tab.id
+                  ? "bg-nutrition-600 text-white"
+                  : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50"
+              }`}
             >
-              <span className="text-sm font-medium text-gray-500">
-                {typeLabels[metric.metric_type] || metric.metric_type}
-              </span>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-3xl font-semibold text-gray-950">
-                  {formatMetricValue(metric.value)}
-                </span>
-                {metric.unit ? (
-                  <span className="text-sm font-medium text-gray-400">
-                    {metric.unit}
-                  </span>
-                ) : null}
-              </div>
+              {tab.label}
             </button>
           ))}
         </div>
+
+        {activeTab === "measurements"
+          ? measurementsOverviewSection
+          : calculationsOverviewSection}
       </div>
 
       <div className="flex shrink-0 justify-end border-t border-gray-100 bg-white px-5 py-4 sm:px-6">
@@ -439,7 +1159,7 @@ export function MeasurementDetailsModal({
           </div>
 
           {timeFilter === "custom" ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-2">
+            <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2">
               <DatePicker
                 label="Desde"
                 value={customStartDate}
@@ -736,7 +1456,13 @@ export function MeasurementDetailsModal({
               leaveFrom="opacity-100 scale-100 translate-y-0"
               leaveTo="opacity-0 scale-95 translate-y-4"
             >
-              <Dialog.Panel className="flex h-[min(88vh,820px)] w-[min(92vw,1180px)] transform flex-col overflow-hidden rounded-[32px] bg-white shadow-2xl transition-all">
+              <Dialog.Panel
+                className={`flex transform flex-col overflow-hidden bg-white shadow-2xl transition-all ${
+                  isFullscreen
+                    ? "h-[96vh] w-[96vw] rounded-[28px]"
+                    : "h-[min(88vh,860px)] w-[min(92vw,1240px)] rounded-[32px]"
+                }`}
+              >
                 <div className="flex shrink-0 items-start justify-between border-b border-gray-100 bg-white px-5 py-4 sm:px-6">
                   <div className="flex min-w-0 items-start gap-3">
                     {selectedMetric ? (
@@ -767,7 +1493,7 @@ export function MeasurementDetailsModal({
                       >
                         {selectedMetric
                           ? selectedMetricLabel
-                          : "Detalle de Mediciones"}
+                          : "Detalle de mediciones"}
                       </Dialog.Title>
                       <p className="mt-1 text-sm text-gray-500">
                         {selectedMetric
@@ -777,14 +1503,32 @@ export function MeasurementDetailsModal({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nutrition-300"
-                    aria-label="Cerrar detalle"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsFullscreen((current) => !current)}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nutrition-300"
+                      aria-label={
+                        isFullscreen
+                          ? "Restaurar tamano del modal"
+                          : "Expandir modal a pantalla completa"
+                      }
+                    >
+                      {isFullscreen ? (
+                        <Minimize2 className="h-5 w-5" />
+                      ) : (
+                        <Maximize2 className="h-5 w-5" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nutrition-300"
+                      aria-label="Cerrar detalle"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
                 </div>
 
                 {selectedMetric ? detailContent : overviewContent}

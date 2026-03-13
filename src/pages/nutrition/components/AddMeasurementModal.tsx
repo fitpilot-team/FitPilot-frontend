@@ -6,6 +6,8 @@ import {
   ChevronDown,
   ChevronRight,
   HeartPulse,
+  Maximize2,
+  Minimize2,
   Ruler,
   Scale,
   Target,
@@ -18,6 +20,11 @@ import {
   useSaveClientHealthMetric,
   useSaveClientMetric,
 } from "@/features/client-history/queries";
+import {
+  buildMeasurementCalculationPreview,
+  CALCULATION_CODES,
+  type MeasurementCalculationPreview,
+} from "@/utils/measurementCalculations";
 
 type MeasurementMode = "composition" | "health";
 type CompositionTab =
@@ -28,11 +35,24 @@ type CompositionTab =
   | "perimetros"
   | "calculos";
 
+type FrisanchoPreviewDetails = {
+  ageRange?: { label?: string };
+  derived?: { correctedArmMuscleAreaCm2?: number };
+  assessment?: {
+    percentileBand?: string;
+    classification?: string;
+    adequacyPctOfP50?: number;
+    approximatePercentile?: number | null;
+  };
+};
+
 interface AddMeasurementModalProps {
   isOpen: boolean;
   onClose: () => void;
   clientId: string;
   mode: MeasurementMode;
+  clientGenre?: string | null;
+  clientDateOfBirth?: string | null;
 }
 
 const DEFAULT_TAB: CompositionTab = "peso";
@@ -244,6 +264,51 @@ const DIAMETER_SECTIONS: Array<{
   },
 ];
 
+const CALCULATION_SUBSECTIONS = [
+  {
+    id: "indicadores-antropometricos",
+    label: "Indicadores antropométricos",
+    helperText: "IMC e índices derivados de cintura, cadera y estatura.",
+  },
+  {
+    id: "peso-teorico",
+    label: "Peso teórico",
+    helperText:
+      "Estimaciones de peso objetivo usando las fórmulas del backend.",
+  },
+  {
+    id: "porcentaje-de-grasa",
+    label: "Porcentaje de grasa",
+    helperText:
+      "Previsualización del valor que procesa backend por bioimpedancia.",
+  },
+  {
+    id: "componentes-corporales",
+    label: "Componentes corporales",
+    helperText: "Masa grasa y masa libre de grasa calculadas con backend.",
+  },
+  {
+    id: "indicadores-de-frisancho",
+    label: "Indicadores de Frisancho",
+    helperText:
+      "cAMA estimada con referencia adulta por edad y sexo cuando hay datos suficientes.",
+  },
+] as const;
+const THEORETICAL_WEIGHT_METHODS = [
+  "Robinson",
+  "Metropolitan",
+  "Hamwi",
+  "Lorentz",
+  "Tradicional",
+] as const;
+type CalculationSubsection = (typeof CALCULATION_SUBSECTIONS)[number]["id"];
+const DEFAULT_CALCULATION_SUBSECTION: CalculationSubsection =
+  CALCULATION_SUBSECTIONS[0].id;
+const isCalculationSubsection = (
+  value: unknown,
+): value is CalculationSubsection =>
+  CALCULATION_SUBSECTIONS.some((section) => section.id === value);
+
 const bmiRanges = [
   {
     label: "Bajo peso",
@@ -281,15 +346,6 @@ const getCurrentLocalDateTime = () => {
   return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
 };
 
-const getBmiValue = (weightKg?: number, heightCm?: number) => {
-  if (weightKg === undefined || heightCm === undefined || heightCm <= 0)
-    return undefined;
-
-  const heightM = heightCm / 100;
-  const bmi = weightKg / (heightM * heightM);
-  return Number.isFinite(bmi) ? bmi : undefined;
-};
-
 const getBmiRange = (bmi?: number) => {
   if (bmi === undefined) return undefined;
   return (
@@ -298,8 +354,66 @@ const getBmiRange = (bmi?: number) => {
   );
 };
 
+const getAgeFromDateOfBirth = (dateOfBirth?: string | null) => {
+  if (!dateOfBirth) return null;
+
+  const birthDate = new Date(dateOfBirth);
+  if (Number.isNaN(birthDate.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+
+  if (
+    monthDelta < 0 ||
+    (monthDelta === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age -= 1;
+  }
+
+  return age >= 0 ? age : null;
+};
+
 const MAX_WEIGHT_KG = 350;
 const MAX_HEIGHT_CM = 250;
+const calculationFieldLabels: Record<string, string> = {
+  weight_kg: "peso",
+  height_cm: "estatura",
+  body_fat_pct: "% de grasa",
+  waist_cm: "cintura",
+  hip_cm: "cadera",
+  relaxed_arm_midpoint_cm: "brazo relajado",
+  triceps_fold_mm: "pliegue tricipital",
+  genre: "sexo",
+  age_years: "edad",
+};
+const formatMissingFields = (missingFields?: string[]) => {
+  if (!missingFields?.length) return "Faltan datos para calcular.";
+
+  return `Falta ${missingFields
+    .map((field) => calculationFieldLabels[field] ?? field)
+    .join(", ")}.`;
+};
+const formatCalculationValue = (result?: MeasurementCalculationPreview) => {
+  if (!result || result.status !== "computed" || result.value === null) {
+    return "--";
+  }
+
+  if (result.unit) {
+    return `${result.value.toFixed(2)} ${result.unit}`;
+  }
+
+  return result.value.toFixed(3);
+};
+const theoreticalWeightCodeByLabel = {
+  Robinson: CALCULATION_CODES.IDEAL_WEIGHT_ROBINSON,
+  Metropolitan: CALCULATION_CODES.IDEAL_WEIGHT_METROPOLITAN,
+  Hamwi: CALCULATION_CODES.IDEAL_WEIGHT_HAMWI,
+  Lorentz: CALCULATION_CODES.IDEAL_WEIGHT_LORENTZ,
+  Tradicional: CALCULATION_CODES.IDEAL_WEIGHT_TRADITIONAL,
+} as const;
 const COMPOSITION_FLOW_TABS: CompositionTab[] = [
   "peso",
   "bioimpedancia",
@@ -313,10 +427,16 @@ export function AddMeasurementModal({
   onClose,
   clientId,
   mode,
+  clientGenre,
+  clientDateOfBirth,
 }: AddMeasurementModalProps) {
   const [activeMedicionTab, setActiveMedicionTab] =
     useState<CompositionTab>(DEFAULT_TAB);
   const [isMedicionesExpanded, setIsMedicionesExpanded] = useState(true);
+  const [isCalculosExpanded, setIsCalculosExpanded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeCalculationSubsection, setActiveCalculationSubsection] =
+    useState<CalculationSubsection>(DEFAULT_CALCULATION_SUBSECTION);
   const [peso, setPeso] = useState("");
   const [estatura, setEstatura] = useState("");
   const [recordedAt, setRecordedAt] = useState(getCurrentLocalDateTime());
@@ -400,6 +520,8 @@ export function AddMeasurementModal({
     if (!draft) {
       setActiveMedicionTab(DEFAULT_TAB);
       setIsMedicionesExpanded(true);
+      setIsCalculosExpanded(false);
+      setActiveCalculationSubsection(DEFAULT_CALCULATION_SUBSECTION);
       setPeso("");
       setEstatura("");
       setFatPercentage("");
@@ -430,6 +552,12 @@ export function AddMeasurementModal({
       const parsed = JSON.parse(draft);
       setActiveMedicionTab(parsed.activeMedicionTab || DEFAULT_TAB);
       setIsMedicionesExpanded(parsed.isMedicionesExpanded ?? true);
+      setIsCalculosExpanded(parsed.isCalculosExpanded ?? false);
+      setActiveCalculationSubsection(
+        isCalculationSubsection(parsed.activeCalculationSubsection)
+          ? parsed.activeCalculationSubsection
+          : DEFAULT_CALCULATION_SUBSECTION,
+      );
       setPeso(parsed.peso || "");
       setEstatura(parsed.estatura || "");
 
@@ -469,6 +597,8 @@ export function AddMeasurementModal({
       JSON.stringify({
         activeMedicionTab,
         isMedicionesExpanded,
+        isCalculosExpanded,
+        activeCalculationSubsection,
         peso,
         estatura,
         fatPercentage,
@@ -496,9 +626,11 @@ export function AddMeasurementModal({
     );
   }, [
     activeMedicionTab,
+    activeCalculationSubsection,
     clientId,
     estatura,
     isHealthMode,
+    isCalculosExpanded,
     isMedicionesExpanded,
     isOpen,
     peso,
@@ -592,8 +724,84 @@ export function AddMeasurementModal({
 
   const weightValue = parseOptionalNumber(peso);
   const heightValue = parseOptionalNumber(estatura);
-  const bmiValue = getBmiValue(weightValue, heightValue);
+  const bioimpedanciaBodyFat = parseOptionalNumber(fatPercentage);
+  const waistValue = parseOptionalNumber(perimeters.waist_cm);
+  const hipValue = parseOptionalNumber(perimeters.hip_cm);
+  const relaxedArmMidpointValue = parseOptionalNumber(
+    perimeters.relaxed_arm_midpoint_cm,
+  );
+  const tricepsFoldValue = parseOptionalNumber(tricepsFoldMm);
+  const clientAgeYears = getAgeFromDateOfBirth(clientDateOfBirth);
+  const calculationPreview = buildMeasurementCalculationPreview({
+    measurement: {
+      weight_kg: weightValue,
+      height_cm: heightValue,
+      body_fat_pct: bioimpedanciaBodyFat,
+      waist_cm: waistValue,
+      hip_cm: hipValue,
+      relaxed_arm_midpoint_cm: relaxedArmMidpointValue,
+      triceps_fold_mm: tricepsFoldValue,
+    },
+    userGenre: clientGenre,
+    userAgeYears: clientAgeYears,
+  });
+  const bmiPreview = calculationPreview[CALCULATION_CODES.BMI];
+  const bmiValue =
+    bmiPreview.status === "computed" && bmiPreview.value !== null
+      ? bmiPreview.value
+      : undefined;
   const bmiRange = getBmiRange(bmiValue);
+  const anthropometricResults = [
+    {
+      label: "Índice de masa corporal",
+      description: "Basado en peso y estatura.",
+      result: calculationPreview[CALCULATION_CODES.BMI],
+    },
+    {
+      label: "Índice cintura-cadera",
+      description: "Basado en cintura y cadera.",
+      result: calculationPreview[CALCULATION_CODES.WAIST_HIP_RATIO],
+    },
+    {
+      label: "Índice cintura-estatura",
+      description: "Basado en cintura y estatura.",
+      result: calculationPreview[CALCULATION_CODES.WAIST_HEIGHT_RATIO],
+    },
+  ];
+  const idealWeightResults = THEORETICAL_WEIGHT_METHODS.map((label) => ({
+    label,
+    result: calculationPreview[theoreticalWeightCodeByLabel[label]],
+  }));
+  const compositionResults = [
+    {
+      label: "Masa grasa",
+      description: "Peso × % grasa / 100",
+      result: calculationPreview[CALCULATION_CODES.FAT_MASS_KG],
+    },
+    {
+      label: "Masa libre de grasa",
+      description: "Peso - masa grasa",
+      result: calculationPreview[CALCULATION_CODES.LEAN_MASS_KG],
+    },
+  ];
+  const frisanchoResult =
+    calculationPreview[CALCULATION_CODES.FRISANCHO_INDICATORS];
+  const frisanchoDetails = (frisanchoResult.details ??
+    null) as FrisanchoPreviewDetails | null;
+  const selectedCalculationSubsection =
+    CALCULATION_SUBSECTIONS.find(
+      (section) => section.id === activeCalculationSubsection,
+    ) ?? CALCULATION_SUBSECTIONS[0];
+
+  const handleCalculosToggle = () => {
+    if (activeMedicionTab !== "calculos") {
+      setActiveMedicionTab("calculos");
+      setIsCalculosExpanded(true);
+      return;
+    }
+
+    setIsCalculosExpanded((current) => !current);
+  };
 
   const handleClear = () => {
     if (isHealthMode) {
@@ -611,6 +819,8 @@ export function AddMeasurementModal({
 
     setActiveMedicionTab(DEFAULT_TAB);
     setIsMedicionesExpanded(true);
+    setIsCalculosExpanded(false);
+    setActiveCalculationSubsection(DEFAULT_CALCULATION_SUBSECTION);
     setPeso("");
     setEstatura("");
     setFatPercentage("");
@@ -800,6 +1010,10 @@ export function AddMeasurementModal({
 
     return "Guardar Medición";
   })();
+  const activeCompositionContentKey =
+    activeMedicionTab === "calculos"
+      ? `calculos-${activeCalculationSubsection}`
+      : activeMedicionTab;
 
   const compositionContent = (
     <div className="flex min-h-0 flex-1 flex-col gap-6 animate-in fade-in duration-300 md:flex-row">
@@ -844,19 +1058,58 @@ export function AddMeasurementModal({
           </div>
         </div>
 
-        <button
-          onClick={() => setActiveMedicionTab("calculos")}
-          className={`whitespace-nowrap rounded-xl border-t border-gray-100 px-4 pt-3 pb-3 text-left text-sm font-medium transition-colors ${
-            activeMedicionTab === "calculos"
-              ? "border border-nutrition-100 bg-nutrition-50 text-nutrition-700"
-              : "text-gray-600 hover:bg-gray-50"
-          }`}
-        >
-          Cálculos
-        </button>
+        <div className="border-t border-gray-100 pt-2">
+          <button
+            onClick={handleCalculosToggle}
+            className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-sm font-semibold transition-colors ${
+              activeMedicionTab === "calculos"
+                ? "border border-nutrition-100 bg-nutrition-50 text-nutrition-700"
+                : "bg-gray-50 text-gray-900 hover:bg-gray-100"
+            }`}
+          >
+            <span>Cálculos</span>
+            {isCalculosExpanded ? (
+              <ChevronDown className="h-4 w-4 text-gray-500" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-gray-500" />
+            )}
+          </button>
+          <div
+            className={`flex items-center space-x-2 overflow-hidden transition-all duration-300 ${
+              isCalculosExpanded
+                ? "mt-2 max-h-[420px] opacity-100"
+                : "max-h-0 opacity-0"
+            }`}
+          >
+            <div className="ml-5 h-full w-0.5 shrink-0 rounded-full bg-gray-100" />
+            <div className="flex flex-1 flex-col space-y-1">
+              {CALCULATION_SUBSECTIONS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveMedicionTab("calculos");
+                    setActiveCalculationSubsection(item.id);
+                  }}
+                  className={`whitespace-nowrap rounded-xl px-4 py-2 text-left text-sm font-medium transition-colors ${
+                    activeMedicionTab === "calculos" &&
+                    activeCalculationSubsection === item.id
+                      ? "border border-nutrition-100 bg-nutrition-50 text-nutrition-700"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto rounded-2xl border border-gray-100 bg-gray-50 p-6">
+      <div
+        key={activeCompositionContentKey}
+        className="flex-1 overflow-y-auto rounded-2xl border border-gray-100 bg-gray-50 p-6 animate-in fade-in slide-in-from-right-2 duration-300"
+      >
         {activeMedicionTab === "peso" && (
           <div className="animate-in fade-in duration-300">
             <div className="mb-6 flex items-center gap-3">
@@ -928,7 +1181,7 @@ export function AddMeasurementModal({
                     </p>
                     <div className="mt-1 flex items-center gap-2">
                       <span className="text-2xl font-bold text-gray-900">
-                        {bmiValue !== undefined ? bmiValue.toFixed(1) : "--"}
+                        {bmiValue !== undefined ? bmiValue.toFixed(2) : "--"}
                       </span>
                       <span
                         className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -998,8 +1251,11 @@ export function AddMeasurementModal({
                       </span>
                     }
                     helperText={
-                      peso && fatPercentage
-                        ? `${(((parseOptionalNumber(peso) || 0) * (parseOptionalNumber(fatPercentage) || 0)) / 100).toFixed(1)} kg`
+                      calculationPreview[CALCULATION_CODES.FAT_MASS_KG]
+                        .status === "computed"
+                        ? `Masa grasa calculada: ${formatCalculationValue(
+                            calculationPreview[CALCULATION_CODES.FAT_MASS_KG],
+                          )}`
                         : undefined
                     }
                   />
@@ -1081,6 +1337,14 @@ export function AddMeasurementModal({
                       <span className="mr-3 text-sm font-medium text-gray-400">
                         kg
                       </span>
+                    }
+                    helperText={
+                      calculationPreview[CALCULATION_CODES.LEAN_MASS_KG]
+                        .status === "computed"
+                        ? `Backend: ${formatCalculationValue(
+                            calculationPreview[CALCULATION_CODES.LEAN_MASS_KG],
+                          )}`
+                        : undefined
                     }
                   />
                   <Input
@@ -1411,11 +1675,296 @@ export function AddMeasurementModal({
           </div>
         )}
         {activeMedicionTab === "calculos" && (
-          <EmptyState
-            icon={<Activity className="mb-4 h-10 w-10 text-gray-400" />}
-            title="Cálculos"
-            text="Aquí se visualizarán los cálculos y proyecciones de composición corporal."
-          />
+          <div className="animate-in fade-in duration-300">
+            <div className="mb-6 flex items-center gap-3">
+              <div className="rounded-lg bg-nutrition-100 p-2 text-nutrition-600">
+                <Activity className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-lg font-bold text-gray-900">Cálculos</h4>
+                <p className="text-sm text-gray-500">
+                  Subcategoría seleccionada para análisis y proyecciones.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-gray-400">
+                Subsección activa
+              </div>
+              <h5 className="text-xl font-bold text-gray-900">
+                {selectedCalculationSubsection.label}
+              </h5>
+              <p className="mt-2 text-sm text-gray-500">
+                {selectedCalculationSubsection.helperText}
+              </p>
+              {selectedCalculationSubsection.id ===
+              "indicadores-antropometricos" ? (
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {anthropometricResults.map(
+                    ({ label, description, result }) => (
+                      <article
+                        key={label}
+                        className="rounded-xl border border-gray-100 bg-gray-50 p-4"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+                          {label}
+                        </p>
+                        <p className="mt-3 text-2xl font-bold text-gray-900">
+                          {formatCalculationValue(result)}
+                        </p>
+                        <p className="mt-2 text-sm text-gray-500">
+                          {result.status === "computed"
+                            ? description
+                            : formatMissingFields(result.missingFields)}
+                        </p>
+                      </article>
+                    ),
+                  )}
+                </div>
+              ) : selectedCalculationSubsection.id === "peso-teorico" ? (
+                <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50 p-4">
+                  <div className="space-y-3">
+                    {idealWeightResults.map(({ label, result }) => (
+                      <div
+                        key={label}
+                        className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[170px_1fr]"
+                      >
+                        <label className="text-sm font-semibold text-gray-700">
+                          {label}
+                        </label>
+                        <div>
+                          <input
+                            type="text"
+                            readOnly
+                            value={
+                              result.status === "computed"
+                                ? formatCalculationValue(result)
+                                : ""
+                            }
+                            placeholder="Pendiente de cálculo"
+                            className={fieldClassName}
+                          />
+                          {result.status !== "computed" && (
+                            <p className="mt-1 text-xs text-amber-600">
+                              {formatMissingFields(result.missingFields)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : selectedCalculationSubsection.id === "porcentaje-de-grasa" ? (
+                <div className="mt-5 space-y-4">
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+                          Bioimpedancia
+                        </p>
+                        <p className="mt-2 text-2xl font-bold text-gray-900">
+                          {formatCalculationValue(
+                            calculationPreview[
+                              CALCULATION_CODES.BODY_FAT_PCT_BIOIMPEDANCE
+                            ],
+                          )}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-nutrition-50 px-3 py-1 text-xs font-semibold text-nutrition-700 ring-1 ring-nutrition-100">
+                        Fórmula backend
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm text-gray-500">
+                      {calculationPreview[
+                        CALCULATION_CODES.BODY_FAT_PCT_BIOIMPEDANCE
+                      ].status === "computed"
+                        ? "Este valor se toma directo de la captura de bioimpedancia y se redondea igual que en backend."
+                        : formatMissingFields(
+                            calculationPreview[
+                              CALCULATION_CODES.BODY_FAT_PCT_BIOIMPEDANCE
+                            ].missingFields,
+                          )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-dashed border-gray-200 bg-white p-4 text-sm text-gray-500">
+                    Por ahora el backend solo calcula porcentaje de grasa a
+                    partir de `body_fat_pct` capturado. Las demás ecuaciones aún
+                    no están habilitadas en el motor.
+                  </div>
+                </div>
+              ) : selectedCalculationSubsection.id ===
+                "componentes-corporales" ? (
+                <div className="mt-5 space-y-5">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {compositionResults.map(
+                      ({ label, description, result }) => (
+                        <article
+                          key={label}
+                          className="rounded-xl border border-gray-100 bg-gray-50 p-4"
+                        >
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+                            {label}
+                          </p>
+                          <p className="mt-3 text-2xl font-bold text-gray-900">
+                            {formatCalculationValue(result)}
+                          </p>
+                          <p className="mt-2 text-sm text-gray-500">
+                            {result.status === "computed"
+                              ? description
+                              : formatMissingFields(result.missingFields)}
+                          </p>
+                        </article>
+                      ),
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+                      Datos capturados manualmente
+                    </p>
+                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className="rounded-lg bg-gray-50 p-4">
+                        <p className="text-sm font-semibold text-gray-700">
+                          Masa muscular
+                        </p>
+                        <p className="mt-2 text-xl font-bold text-gray-900">
+                          {muscleMassKg || "--"}
+                          <span className="ml-1 text-sm font-medium text-gray-500">
+                            kg
+                          </span>
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-4">
+                        <p className="text-sm font-semibold text-gray-700">
+                          Peso óseo
+                        </p>
+                        <p className="mt-2 text-xl font-bold text-gray-900">
+                          {boneMassKg || "--"}
+                          <span className="ml-1 text-sm font-medium text-gray-500">
+                            kg
+                          </span>
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-4">
+                        <p className="text-sm font-semibold text-gray-700">
+                          Agua corporal
+                        </p>
+                        <p className="mt-2 text-xl font-bold text-gray-900">
+                          {bodyWaterPercentage || "--"}
+                          <span className="ml-1 text-sm font-medium text-gray-500">
+                            %
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedCalculationSubsection.id ===
+                "indicadores-de-frisancho" ? (
+                <div
+                  className={`mt-5 rounded-xl border p-5 ${
+                    frisanchoResult.status === "computed"
+                      ? "border-emerald-200 bg-emerald-50"
+                      : "border-amber-200 bg-amber-50"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertCircle
+                      className={`mt-0.5 h-5 w-5 ${
+                        frisanchoResult.status === "computed"
+                          ? "text-emerald-600"
+                          : "text-amber-600"
+                      }`}
+                    />
+                    <div className="w-full">
+                      <h6
+                        className={`text-base font-semibold ${
+                          frisanchoResult.status === "computed"
+                            ? "text-emerald-900"
+                            : "text-amber-900"
+                        }`}
+                      >
+                        {frisanchoResult.status === "computed"
+                          ? "Referencia de Frisancho lista"
+                          : "Frisancho no disponible todavia"}
+                      </h6>
+                      <p
+                        className={`mt-2 text-sm ${
+                          frisanchoResult.status === "computed"
+                            ? "text-emerald-800"
+                            : "text-amber-800"
+                        }`}
+                      >
+                        {frisanchoResult.status === "computed"
+                          ? "Vista previa local de cAMA con referencia adulta por edad y sexo."
+                          : (frisanchoResult.message ??
+                            "El calculo de Frisancho aun no esta disponible.")}
+                      </p>
+                      {frisanchoResult.status === "computed" &&
+                      frisanchoDetails ? (
+                        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                          <div className="rounded-xl bg-white/80 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                              cAMA
+                            </p>
+                            <p className="mt-2 text-2xl font-bold text-gray-900">
+                              {frisanchoDetails.derived?.correctedArmMuscleAreaCm2?.toFixed(
+                                3,
+                              ) ?? formatCalculationValue(frisanchoResult)}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-500">
+                              {frisanchoDetails.ageRange?.label ??
+                                "Referencia adulta"}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-white/80 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                              Percentil
+                            </p>
+                            <p className="mt-2 text-2xl font-bold text-gray-900">
+                              {frisanchoDetails.assessment?.percentileBand ??
+                                "--"}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-500">
+                              ~P
+                              {frisanchoDetails.assessment?.approximatePercentile?.toFixed(
+                                1,
+                              ) ?? "--"}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-white/80 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                              Adecuacion
+                            </p>
+                            <p className="mt-2 text-2xl font-bold text-gray-900">
+                              {frisanchoDetails.assessment?.adequacyPctOfP50?.toFixed(
+                                1,
+                              ) ?? "--"}
+                              %
+                            </p>
+                            <p className="mt-1 text-sm text-gray-500">
+                              {frisanchoDetails.assessment?.classification ??
+                                "--"}
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+                      <p
+                        className={`mt-3 text-xs font-medium uppercase tracking-[0.18em] ${
+                          frisanchoResult.status === "computed"
+                            ? "text-emerald-700"
+                            : "text-amber-700"
+                        }`}
+                      >
+                        Estado: {frisanchoResult.status}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -1573,6 +2122,12 @@ export function AddMeasurementModal({
     </div>
   );
 
+  useEffect(() => {
+    if (!isOpen) {
+      setIsFullscreen(false);
+    }
+  }, [isOpen]);
+
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -1598,7 +2153,13 @@ export function AddMeasurementModal({
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="flex h-[80vh] w-full max-w-6xl transform flex-col overflow-hidden rounded-3xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+              <Dialog.Panel
+                className={`flex transform flex-col overflow-hidden bg-white p-6 text-left align-middle shadow-xl transition-all ${
+                  isFullscreen
+                    ? "h-[96vh] w-[96vw] max-w-none rounded-2xl"
+                    : "h-[80vh] w-full max-w-6xl rounded-3xl"
+                }`}
+              >
                 <div className="mb-6 flex items-center justify-between">
                   <div>
                     <h3 className="text-xl font-bold text-gray-900">
@@ -1612,12 +2173,30 @@ export function AddMeasurementModal({
                         : "Registra composición corporal y antropometría"}
                     </p>
                   </div>
-                  <button
-                    onClick={onClose}
-                    className="cursor-pointer rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsFullscreen((current) => !current)}
+                      className="cursor-pointer rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                      aria-label={
+                        isFullscreen
+                          ? "Restaurar tamaño del modal"
+                          : "Expandir modal a pantalla completa"
+                      }
+                    >
+                      {isFullscreen ? (
+                        <Minimize2 className="h-5 w-5" />
+                      ) : (
+                        <Maximize2 className="h-5 w-5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={onClose}
+                      className="cursor-pointer rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                      aria-label="Cerrar modal"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
                 </div>
 
                 {isHealthMode ? healthContent : compositionContent}
@@ -1657,23 +2236,5 @@ export function AddMeasurementModal({
         </div>
       </Dialog>
     </Transition>
-  );
-}
-
-function EmptyState({
-  icon,
-  title,
-  text,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="flex min-h-[300px] h-full flex-col items-center justify-center text-center text-gray-500 animate-in fade-in duration-300">
-      {icon}
-      <h4 className="mb-2 text-lg font-bold text-gray-900">{title}</h4>
-      <p className="max-w-md">{text}</p>
-    </div>
   );
 }

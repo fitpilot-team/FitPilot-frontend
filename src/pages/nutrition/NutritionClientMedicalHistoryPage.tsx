@@ -24,7 +24,11 @@ import {
 import { useState, useEffect, useMemo } from "react";
 import { MetricHistoryModal } from "./components/MetricHistoryModal";
 import { AddMeasurementModal } from "./components/AddMeasurementModal";
-import { MeasurementDetailsModal } from "./components/MeasurementDetailsModal";
+import {
+  MeasurementDetailsModal,
+  type MeasurementRecord,
+  type MeasurementRecordMetric,
+} from "./components/MeasurementDetailsModal";
 import { ClientMetric, MetricType } from "@/services/client-metrics";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -89,7 +93,12 @@ const formatOptionalMetricValue = (value?: number | null) =>
   value === undefined || value === null || Number.isNaN(value) ? "-" : value;
 
 const getPercentageBarWidth = (value?: number | null) => {
-  if (value === undefined || value === null || Number.isNaN(value) || value <= 0)
+  if (
+    value === undefined ||
+    value === null ||
+    Number.isNaN(value) ||
+    value <= 0
+  )
     return "0%";
 
   return `${Math.min(value, 100)}%`;
@@ -121,7 +130,8 @@ export function NutritionClientMedicalHistoryPage() {
   >("composition");
   const [isAddMeasurementModalOpen, setIsAddMeasurementModalOpen] =
     useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<any>(null);
+  const [selectedRecord, setSelectedRecord] =
+    useState<MeasurementRecord | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -1054,29 +1064,34 @@ export function NutritionClientMedicalHistoryPage() {
     }
   }, [historyData]);
 
-  const groupedCompositionMetrics = useMemo(() => {
-    const recordGroups = new Map<string, any>();
+  const compositionRecords = useMemo(() => {
+    return (historyData?.client_metrics || [])
+      .map((measurement) => {
+        const metrics = normalizeMetrics([measurement]).map(
+          (metric): MeasurementRecordMetric => ({
+            id: metric.id,
+            metric_type: metric.metric_type,
+            value: metric.value,
+            unit: metric.unit,
+            date: metric.date,
+          }),
+        );
 
-    (client?.client_metrics || []).forEach((metric) => {
-      const dateStr = format(new Date(metric.date), "yyyy-MM-dd");
-      if (!recordGroups.has(dateStr)) {
-        recordGroups.set(dateStr, {
-          dateStr,
-          rawDate: metric.date,
-          metrics: [],
-        });
-      }
-      const group = recordGroups.get(dateStr);
-      group.metrics.push(metric);
-      if (metric.metric_type === "weight") group.peso = metric;
-      if (metric.metric_type === "body_fat") group.grasa = metric;
-      if (metric.metric_type === "muscle_mass") group.musculo = metric;
-    });
-
-    return Array.from(recordGroups.values()).sort(
-      (a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime(),
-    );
-  }, [client]);
+        return {
+          measurementId: String(measurement.id),
+          rawDate: measurement.date,
+          metrics,
+          peso: metrics.find((metric) => metric.metric_type === "weight"),
+          grasa: metrics.find((metric) => metric.metric_type === "body_fat"),
+          musculo: metrics.find(
+            (metric) => metric.metric_type === "muscle_mass",
+          ),
+        };
+      })
+      .sort(
+        (a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime(),
+      );
+  }, [historyData]);
 
   const groupedHealthMetrics = useMemo(() => {
     const recordGroups = new Map<string, any>();
@@ -1156,7 +1171,7 @@ export function NutritionClientMedicalHistoryPage() {
   const activeGroupedMetrics =
     activeMeasurementTab === "health"
       ? groupedHealthMetrics
-      : groupedCompositionMetrics;
+      : compositionRecords;
 
   const totalPages = Math.ceil(activeGroupedMetrics.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -1362,7 +1377,7 @@ export function NutritionClientMedicalHistoryPage() {
                 onClick={() => setActiveMeasurementTab("health")}
                 className={`pb-4 px-1 text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                   activeMeasurementTab === "health"
-                    ? "text-nutrition-600 border-b-2 border-nutrition-600"
+                    ? "text-pink-600 border-b-2 border-pink-600"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
@@ -1387,7 +1402,7 @@ export function NutritionClientMedicalHistoryPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50 text-sm">
-                      {groupedCompositionMetrics.length > 0 ? (
+                      {compositionRecords.length > 0 ? (
                         paginatedMetrics.map((record, idx) => (
                           <tr
                             key={`record-${idx}`}
@@ -1815,7 +1830,9 @@ export function NutritionClientMedicalHistoryPage() {
                       <div className="w-full bg-blue-100 rounded-full h-2">
                         <div
                           className="bg-blue-500 h-2 rounded-full"
-                          style={{ width: getPercentageBarWidth(client.bodyFatPct) }}
+                          style={{
+                            width: getPercentageBarWidth(client.bodyFatPct),
+                          }}
                         ></div>
                       </div>
 
@@ -2289,13 +2306,17 @@ export function NutritionClientMedicalHistoryPage() {
                       {
                         type: "upper_body_fat" as MetricType,
                         title: "Grasa corporal superior",
-                        value: formatOptionalMetricValue(client.upperBodyFatPct),
+                        value: formatOptionalMetricValue(
+                          client.upperBodyFatPct,
+                        ),
                         unit: "%",
                       },
                       {
                         type: "lower_body_fat" as MetricType,
                         title: "Grasa corporal inferior",
-                        value: formatOptionalMetricValue(client.lowerBodyFatPct),
+                        value: formatOptionalMetricValue(
+                          client.lowerBodyFatPct,
+                        ),
                         unit: "%",
                       },
                       {
@@ -2624,6 +2645,8 @@ export function NutritionClientMedicalHistoryPage() {
         onClose={() => setIsAddMeasurementModalOpen(false)}
         clientId={clientId || ""}
         mode={activeMeasurementTab}
+        clientGenre={historyData?.genre ?? null}
+        clientDateOfBirth={historyData?.date_of_birth ?? null}
       />
 
       <MeasurementDetailsModal

@@ -2,12 +2,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     getClientHistory,
+    getMeasurementDetail,
     saveClientMetric,
     saveClientHealthMetric,
     getClientMetrics,
     getClientHealthMetrics,
 } from './api';
-import { IHistoryClient } from './types';
+import { IHistoryClient, MeasurementDetailResponse } from './types';
 
 export const useClientHistory = (clientId?: number | string, page: number = 1, limit: number = 10) => {
     return useQuery<IHistoryClient, Error>({
@@ -28,6 +29,18 @@ export const useSaveClientMetric = () => {
             queryClient.invalidateQueries({ queryKey: ['client-history'] });
             queryClient.invalidateQueries({ queryKey: ['client-metrics'] });
         },
+    });
+};
+
+export const useMeasurementDetail = (
+    measurementId?: number | string,
+    enabled: boolean = true,
+) => {
+    return useQuery<MeasurementDetailResponse, Error>({
+        queryKey: ['measurement-detail', measurementId],
+        queryFn: () => getMeasurementDetail(measurementId!),
+        enabled: enabled && !!measurementId,
+        staleTime: 1000 * 60 * 5,
     });
 };
 

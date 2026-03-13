@@ -2,6 +2,7 @@ export interface IHistoryClient {
   id: number;
   name: string;
   email: string;
+  date_of_birth?: string | null;
   created_at: string;
   updated_at: string;
   is_active: boolean;
@@ -158,6 +159,41 @@ export interface ClientMetricHistory {
   pectoral_fold_mm: string | null;
   notes: string;
   recorded_by_user_id: number | null;
+  appointment_id?: number | null;
+}
+
+export type MeasurementCalculationStatus = "computed" | "skipped" | "error";
+
+export interface MeasurementCalculationValue {
+  value: number | null;
+  unit: string | null;
+  method: string;
+  formulaVersion: string;
+  status: MeasurementCalculationStatus;
+  details?: Record<string, unknown> | null;
+}
+
+export interface MeasurementCalculationWarning {
+  code: string;
+  calculation: string;
+  message: string;
+  missingFields?: string[];
+}
+
+export interface MeasurementCalculationRun {
+  id: string;
+  engineVersion: string;
+  status: "completed" | "partial" | "failed" | "running";
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface MeasurementDetailResponse {
+  measurement: ClientMetricHistory;
+  calculations: Record<string, MeasurementCalculationValue>;
+  warnings: MeasurementCalculationWarning[];
+  missingFieldsByCalculation: Record<string, string[]>;
+  calculationRun: MeasurementCalculationRun | null;
 }
 
 export interface Appointment {
