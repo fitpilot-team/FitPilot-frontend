@@ -189,15 +189,17 @@ export function MicrocycleCharts({ weekNumber, trainingDays, exercises }: Microc
               />
               <Tooltip
                 contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                formatter={(value: number, name: string, props) => {
-                  if (name === 'effectiveSets' && props?.payload) {
+                formatter={(value, name, props) => {
+                  const numericValue = typeof value === 'number' ? value : Number(value ?? 0);
+                  const key = String(name ?? '');
+                  if (key === 'effectiveSets' && props?.payload) {
                     const payload = props.payload as typeof setsBarData[0];
                     return [
-                      `${value} sets | MV:${payload.mv} MEV:${payload.mev} MAV:${payload.mavLow}-${payload.mavHigh} MRV:${payload.mrv}`,
+                      `${numericValue} sets | MV:${payload.mv} MEV:${payload.mev} MAV:${payload.mavLow}-${payload.mavHigh} MRV:${payload.mrv}`,
                       'RP Volume',
                     ];
                   }
-                  return [value, name];
+                  return [numericValue, key];
                 }}
               />
               <Bar
@@ -291,15 +293,17 @@ export function MicrocycleCharts({ weekNumber, trainingDays, exercises }: Microc
               />
               <Tooltip
                 contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                formatter={(value: number, name: string, props) => {
-                  if (name === 'effectiveReps' && props?.payload) {
+                formatter={(value, name, props) => {
+                  const numericValue = typeof value === 'number' ? value : Number(value ?? 0);
+                  const key = String(name ?? '');
+                  if (key === 'effectiveReps' && props?.payload) {
                     const payload = props.payload as typeof repsBarData[0];
                     return [
-                      `${value} reps (optimal: ${payload.minOptimal}-${payload.maxOptimal})`,
+                      `${numericValue} reps (optimal: ${payload.minOptimal}-${payload.maxOptimal})`,
                       'Effective Reps',
                     ];
                   }
-                  return [value, name];
+                  return [numericValue, key];
                 }}
               />
               <Bar

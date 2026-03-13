@@ -85,13 +85,15 @@ export function CardioChart({ cardioMetrics }: CardioChartProps) {
             />
             <Tooltip
               contentStyle={{ fontSize: 12, borderRadius: 8 }}
-              formatter={(value: number, name: string) => {
+              formatter={(value, name) => {
+                const numericValue = typeof value === 'number' ? value : Number(value ?? 0);
+                const key = String(name ?? '');
                 const labels: Record<string, string> = {
                   zone1_2: `${getCardioZoneLabel(1)}/${getCardioZoneLabel(2)}`,
                   zone3: getCardioZoneLabel(3),
                   zone4_5: `${getCardioZoneLabel(4)}/${getCardioZoneLabel(5)}`,
                 };
-                return [`${value} min`, labels[name] || name];
+                return [`${numericValue} min`, labels[key] || key];
               }}
             />
             <Bar
