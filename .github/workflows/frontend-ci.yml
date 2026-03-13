@@ -36,6 +36,7 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -55,7 +56,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
-          path: .
+          path: dist
+
+      - name: Verify downloaded files
+        run: |
+          pwd
+          ls -la
+          ls -la dist
 
       - name: Install rsync and sshpass
         run: |
