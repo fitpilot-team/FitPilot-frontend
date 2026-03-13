@@ -42,6 +42,9 @@ const toNumber = (value: number | string | null | undefined) => {
     return 0;
 };
 
+const getServingUnits = (food: FoodSearchResult | null | undefined) =>
+    Array.isArray(food?.serving_units) ? food.serving_units : [];
+
 const buildDraftIngredient = (ingredient: RecipeIngredient): DraftIngredient | null => {
     if (!ingredient.food) {
         return null;
@@ -64,9 +67,7 @@ const calculateDraftSummary = (ingredients: DraftIngredient[]) => {
                 return accumulator;
             }
 
-            const selectedUnit = ingredient.food.serving_units.find(
-                (unit) => unit.id === ingredient.servingUnitId,
-            );
+            const selectedUnit = getServingUnits(ingredient.food).find((unit) => unit.id === ingredient.servingUnitId);
             const rawQuantity = toNumber(ingredient.quantity);
             const effectiveQuantity = selectedUnit
                 ? rawQuantity * toNumber(selectedUnit.gram_equivalent)
@@ -142,10 +143,12 @@ export function NutritionRecipeEditorPage() {
             return;
         }
 
+        const recipeIngredients = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+
         setName(recipe.name);
         setDescription(recipe.description ?? '');
         setIngredients(
-            recipe.ingredients
+            recipeIngredients
                 .map((ingredient) => buildDraftIngredient(ingredient))
                 .filter((ingredient): ingredient is DraftIngredient => Boolean(ingredient)),
         );
@@ -474,7 +477,7 @@ export function NutritionRecipeEditorPage() {
                                                         Base ({toNumber(ingredient.food.base_serving_size)}{' '}
                                                         {ingredient.food.base_unit ?? 'g'})
                                                     </option>
-                                                    {ingredient.food.serving_units.map((unit) => (
+                                                    {getServingUnits(ingredient.food).map((unit) => (
                                                         <option key={unit.id} value={unit.id}>
                                                             {unit.unit_name} ({toNumber(unit.gram_equivalent)} g)
                                                         </option>
