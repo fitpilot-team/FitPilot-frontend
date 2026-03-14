@@ -19,7 +19,7 @@ export const getReusableMenuSummary = async (
     if (clientId) {
         params.client_id = clientId;
     }
-    const { data } = await nutritionApi.get('/v1/menus/reusable-summary', { params });
+    const { data } = await nutritionApi.get('/v1/menus/reusable/summary', { params });
     return data;
 };
 
@@ -95,7 +95,7 @@ export const getMenuPoolSummary = async (
     const params: any = { professional_id: professionalId };
     if (clientId) params.client_id = clientId;
     if (date) params.date = date;
-    const { data } = await nutritionApi.get('/v1/menus/pool-summary', { params });
+    const { data } = await nutritionApi.get('/v1/menus/pool/summary', { params });
     return data;
 };
 
@@ -108,7 +108,7 @@ export const getMenuPoolCalendarSummary = async (
     const params: any = { professional_id: professionalId };
     if (clientId) params.client_id = clientId;
     if (date) params.date = date;
-    const { data } = await nutritionApi.get('/v1/menus/pool/calendar-summary', { params });
+    const { data } = await nutritionApi.get('/v1/menus/pool/calendar/summary', { params });
     return data;
 };
 
