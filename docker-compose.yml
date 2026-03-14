@@ -1,7 +1,6 @@
 services:
   frontend:
-    container_name: ${FRONTEND_CONTAINER_NAME:-fitpilot-frontend}
-    image: fitpilot-frontend:local
+    image: ${FRONTEND_IMAGE:-fitpilot-frontend:local}
     build:
       context: .
       dockerfile: Dockerfile

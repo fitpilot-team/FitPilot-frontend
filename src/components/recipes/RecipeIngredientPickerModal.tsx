@@ -1,8 +1,9 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { ChefHat, Plus, Search } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
-import { useSearchFoods } from '@/features/foods/queries';
-import type { FoodSearchResult } from '@/features/foods/types';
+import { useGetFoods } from '@/features/foods/queries';
+import type { FoodSearchResult, IFoodItem } from '@/features/foods/types';
+import { matchesNormalizedQuery } from '@/utils/search';
 
 interface RecipeIngredientPickerModalProps {
     isOpen: boolean;
@@ -34,16 +35,35 @@ export function RecipeIngredientPickerModal({
 }: RecipeIngredientPickerModalProps) {
     const [query, setQuery] = useState('');
     const deferredQuery = useDeferredValue(query);
-    const { data, isLoading } = useSearchFoods(
-        deferredQuery,
-        professionalId,
-        18,
-        isOpen && professionalId !== undefined,
-    );
+    const normalizedQuery = deferredQuery.trim();
+    const { data, isLoading } = useGetFoods(professionalId, isOpen && professionalId !== undefined);
 
     const foods = useMemo(() => {
-        return (data ?? []).filter((food) => !excludeIds.includes(food.id));
-    }, [data, excludeIds]);
+        return (data ?? [])
+            .filter((food) => !excludeIds.includes(food.id))
+            .filter((food) => {
+                if (!normalizedQuery) {
+                    return true;
+                }
+
+                return matchesNormalizedQuery(`${food.name} ${food.brand ?? ''}`, normalizedQuery);
+            })
+            .slice(0, 18)
+            .map((food): FoodSearchResult => ({
+                id: food.id,
+                name: food.name,
+                brand: food.brand,
+                exchange_group_id: food.exchange_group_id ?? null,
+                base_serving_size: food.base_serving_size ?? null,
+                base_unit: food.base_unit ?? null,
+                calories_kcal: food.calories_kcal ?? null,
+                protein_g: food.protein_g ?? null,
+                carbs_g: food.carbs_g ?? null,
+                fat_g: food.fat_g ?? null,
+                fiber_g: food.fiber_g ?? null,
+                serving_units: normalizeServingUnits(food),
+            }));
+    }, [data, excludeIds, normalizedQuery]);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Agregar ingrediente" size="xl">
@@ -126,3 +146,6 @@ export function RecipeIngredientPickerModal({
         </Modal>
     );
 }
+
+const normalizeServingUnits = (food: IFoodItem): FoodSearchResult['serving_units'] =>
+    Array.isArray(food.serving_units) ? food.serving_units : [];

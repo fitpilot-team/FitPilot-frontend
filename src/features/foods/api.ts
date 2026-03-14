@@ -1,5 +1,5 @@
 import { nutritionApi } from "@/api/clients/nutrition.client";
-import { FoodSearchResult, IFoodItem } from "./types";
+import { IFoodItem } from "./types";
 
 const buildProfessionalParams = (professionalId?: number) => {
     if (!professionalId) {
@@ -33,21 +33,6 @@ export const getFoodsByExchangeGroup = async (
 export const getFoods = async (professionalId?: number): Promise<IFoodItem[]> => {
     const { data } = await nutritionApi.get<IFoodItem[]>("/v1/foods", {
         params: buildProfessionalParams(professionalId),
-    });
-    return data;
-};
-
-export const searchFoods = async (
-    query: string,
-    professionalId?: number,
-    limit = 20,
-): Promise<FoodSearchResult[]> => {
-    const { data } = await nutritionApi.get<FoodSearchResult[]>("/v1/foods/search", {
-        params: {
-            q: query,
-            limit,
-            ...buildProfessionalParams(professionalId),
-        },
     });
     return data;
 };
