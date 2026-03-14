@@ -1,6 +1,66 @@
-import { apiClient } from './api';
+import { apiClient } from "./api";
 
-export type MetricType = 'weight' | 'body_fat' | 'muscle_mass' | 'chest' | 'waist' | 'hips' | 'arm_left' | 'arm_right' | 'thigh_left' | 'thigh_right' | 'calf_left' | 'calf_right' | 'visceral_fat' | 'arms' | 'thighs' | 'calves' | 'systolic' | 'diastolic' | 'glucose' | 'blood_pressure';
+export type MetricType =
+  | "weight"
+  | "body_fat"
+  | "upper_body_fat"
+  | "lower_body_fat"
+  | "fat_free_mass"
+  | "muscle_mass"
+  | "bone_mass"
+  | "body_water"
+  | "metabolic_age"
+  | "chest"
+  | "cephalic"
+  | "neck"
+  | "waist"
+  | "hips"
+  | "mesosternal"
+  | "umbilical"
+  | "biacromial"
+  | "biiliocrestal"
+  | "foot_length"
+  | "thorax_transverse"
+  | "thorax_anteroposterior"
+  | "humerus_biepicondylar"
+  | "wrist_bistyloid"
+  | "femur_biepicondylar"
+  | "bimaleolar"
+  | "foot_transverse"
+  | "hand_length"
+  | "hand_transverse"
+  | "arm_left"
+  | "arm_right"
+  | "relaxed_arm_midpoint"
+  | "contracted_arm_midpoint"
+  | "forearm"
+  | "wrist"
+  | "thigh_left"
+  | "thigh_right"
+  | "mid_thigh"
+  | "calf"
+  | "calf_left"
+  | "calf_right"
+  | "visceral_fat"
+  | "arms"
+  | "thighs"
+  | "calves"
+  | "subscapular_fold"
+  | "triceps_fold"
+  | "biceps_fold"
+  | "iliac_crest_fold"
+  | "supraspinal_fold"
+  | "abdominal_fold"
+  | "front_thigh_fold"
+  | "medial_calf_fold"
+  | "mid_axillary_fold"
+  | "pectoral_fold"
+  | "systolic"
+  | "diastolic"
+  | "glucose"
+  | "blood_pressure"
+  | "heart_rate"
+  | "oxygen_saturation";
 
 export interface ClientMetric {
   id: string;
@@ -41,35 +101,49 @@ export interface ClientMetricSummary {
 }
 
 export const clientMetricsApi = {
-  getMetrics: (clientId: string, params?: {
-    metric_type?: MetricType;
-    start_date?: string;
-    end_date?: string;
-    skip?: number;
-    limit?: number;
-  }): Promise<ClientMetricListResponse> => {
+  getMetrics: (
+    clientId: string,
+    params?: {
+      metric_type?: MetricType;
+      start_date?: string;
+      end_date?: string;
+      skip?: number;
+      limit?: number;
+    },
+  ): Promise<ClientMetricListResponse> => {
     const queryParams = new URLSearchParams();
-    if (params?.metric_type) queryParams.append('metric_type', params.metric_type);
-    if (params?.start_date) queryParams.append('start_date', params.start_date);
-    if (params?.end_date) queryParams.append('end_date', params.end_date);
-    if (params?.skip !== undefined) queryParams.append('skip', params.skip.toString());
-    if (params?.limit !== undefined) queryParams.append('limit', params.limit.toString());
+    if (params?.metric_type)
+      queryParams.append("metric_type", params.metric_type);
+    if (params?.start_date) queryParams.append("start_date", params.start_date);
+    if (params?.end_date) queryParams.append("end_date", params.end_date);
+    if (params?.skip !== undefined)
+      queryParams.append("skip", params.skip.toString());
+    if (params?.limit !== undefined)
+      queryParams.append("limit", params.limit.toString());
 
     const queryString = queryParams.toString();
     return apiClient.get<ClientMetricListResponse>(
-      `/client-metrics/${clientId}${queryString ? `?${queryString}` : ''}`
+      `/client-metrics/${clientId}${queryString ? `?${queryString}` : ""}`,
     );
   },
 
   getSummary: (clientId: string): Promise<ClientMetricSummary[]> => {
-    return apiClient.get<ClientMetricSummary[]>(`/client-metrics/${clientId}/summary`);
+    return apiClient.get<ClientMetricSummary[]>(
+      `/client-metrics/${clientId}/summary`,
+    );
   },
 
-  createMetric: (clientId: string, data: ClientMetricCreate): Promise<ClientMetric> => {
+  createMetric: (
+    clientId: string,
+    data: ClientMetricCreate,
+  ): Promise<ClientMetric> => {
     return apiClient.post<ClientMetric>(`/client-metrics/${clientId}`, data);
   },
 
-  updateMetric: (metricId: string, data: ClientMetricUpdate): Promise<ClientMetric> => {
+  updateMetric: (
+    metricId: string,
+    data: ClientMetricUpdate,
+  ): Promise<ClientMetric> => {
     return apiClient.put<ClientMetric>(`/client-metrics/${metricId}`, data);
   },
 
