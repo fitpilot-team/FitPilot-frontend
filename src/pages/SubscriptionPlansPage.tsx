@@ -10,13 +10,15 @@ import {
 } from '@/features/subscriptions/queries';
 import { usePlans } from '@/features/plans/queries';
 import { Plan } from '@/features/plans/types';
-import { resolvePlanAccess, resolveSubscriptionState } from '@/features/subscriptions/planAccess';
+import {
+  resolvePlanAccess,
+  resolveSubscriptionPlanAction,
+  resolveSubscriptionState,
+} from '@/features/subscriptions/planAccess';
 import { useAuthStore } from '@/store/newAuthStore';
 import type { User } from '@/types/api';
 
 const ACTIVE_SUBSCRIPTION_EXISTS_CODE = 'ACTIVE_SUBSCRIPTION_EXISTS';
-
-type PlanActionKind = 'checkout' | 'resume' | 'portal' | 'already_active';
 
 const formatPrice = (priceStr: string) => {
   const price = parseFloat(priceStr);
@@ -34,12 +36,6 @@ const getRedirectUrl = (payload: Record<string, unknown>): string | null => {
   if (typeof rawUrl === 'string' && rawUrl.trim()) return rawUrl;
   return null;
 };
-
-const normalizePlanName = (value: string | null | undefined) =>
-  String(value ?? '')
-    .toLowerCase()
-    .replace(/[\s_-]+/g, '')
-    .trim();
 
 const getApiErrorCode = (error: unknown): string | null => {
   if (
@@ -146,40 +142,8 @@ const getPlanMarketing = (plan: Plan) => {
   };
 };
 
-const isCurrentSelectedPlan = (plan: Plan, user: User | null): boolean => {
-  const access = resolvePlanAccess(user);
-  return (
-    access.currentPlanId === plan.id ||
-    normalizePlanName(access.currentPlanName) === normalizePlanName(plan.name)
-  );
-};
-
-const resolvePlanAction = (plan: Plan | null, user: User | null): PlanActionKind => {
-  if (!plan) return 'checkout';
-
-  const subscription = resolveSubscriptionState(user);
-  const isCurrentPlan = isCurrentSelectedPlan(plan, user);
-
-  if (subscription.status === 'scheduled_cancelation' && isCurrentPlan) {
-    return 'resume';
-  }
-
-  if (subscription.status === 'active' && isCurrentPlan) {
-    return 'already_active';
-  }
-
-  if (
-    (subscription.status === 'active' || subscription.status === 'scheduled_cancelation') &&
-    !isCurrentPlan
-  ) {
-    return 'portal';
-  }
-
-  return 'checkout';
-};
-
 const getPrimaryActionLabel = (plan: Plan | null, user: User | null): string => {
-  const action = resolvePlanAction(plan, user);
+  const action = resolveSubscriptionPlanAction(plan, user);
   const subscription = resolveSubscriptionState(user);
 
   if (action === 'resume') return 'Reactivar renovacion automatica';
@@ -241,7 +205,7 @@ export function SubscriptionPlansPage() {
     try {
       await refreshProfessional(true);
       const latestUser = useAuthStore.getState().user ?? userData;
-      const action = resolvePlanAction(selectedPlan, latestUser);
+      const action = resolveSubscriptionPlanAction(selectedPlan, latestUser);
 
       if (action === 'already_active') {
         toast.success('Tu plan ya esta activo.');
@@ -288,6 +252,8 @@ export function SubscriptionPlansPage() {
 
       if (getApiErrorCode(error) === ACTIVE_SUBSCRIPTION_EXISTS_CODE) {
         await refreshProfessional(true);
+        toast('Actualizamos el estado de tu suscripcion. Intenta de nuevo.');
+        return;
       }
 
       toast.error(
