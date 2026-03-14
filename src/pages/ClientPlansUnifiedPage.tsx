@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ClipboardDocumentListIcon,
+  ExclamationTriangleIcon,
   MagnifyingGlassIcon,
   UserIcon,
 } from '@heroicons/react/24/outline';
 import { useProfessional } from '@/contexts/ProfessionalContext';
 import { useAuthStore } from '@/store/newAuthStore';
 import { useMesocycleStore } from '@/store/mesocycleStore';
-import { useGetMenuPool } from '@/features/menus/queries';
-import type { IMenuPool } from '@/features/menus/types';
+import { useGetMenuPoolSummary } from '@/features/menus/queries';
+import type { IMenuPoolSummary } from '@/features/menus/types';
 import { useProfessionalClients } from '@/features/professional-clients/queries';
 import type { IProfessionalClient } from '@/features/professional-clients/types';
 import { resolvePlanAccess } from '@/features/subscriptions/planAccess';
@@ -25,8 +26,8 @@ type ClientPlansGroup = {
   clientId: string;
   trainingPrograms: Macrocycle[];
   latestTrainingProgram: Macrocycle | null;
-  nutritionMenus: IMenuPool[];
-  latestNutritionMenu: IMenuPool | null;
+  nutritionMenus: IMenuPoolSummary[];
+  latestNutritionMenu: IMenuPoolSummary | null;
 };
 
 type ClientSearchOption = {
@@ -55,8 +56,8 @@ const getProgramSortScore = (program: Macrocycle): number => {
   return Number.isFinite(numericId) ? numericId : 0;
 };
 
-const getMenuSortScore = (menu: IMenuPool): number => {
-  const assignedStartDate = Date.parse(menu.assigned_start_date || '');
+const getMenuSortScore = (menu: IMenuPoolSummary): number => {
+  const assignedStartDate = Date.parse(menu.assignment_start_date || '');
   if (!Number.isNaN(assignedStartDate)) return assignedStartDate;
 
   const assignedDate = Date.parse(menu.assigned_date || '');
@@ -66,6 +67,14 @@ const getMenuSortScore = (menu: IMenuPool): number => {
   if (!Number.isNaN(createdAt)) return createdAt;
 
   return Number(menu.id) || 0;
+};
+
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return 'No se pudieron cargar los menus del area de nutricion.';
 };
 
 export function ClientPlansUnifiedPage() {
@@ -108,10 +117,12 @@ export function ClientPlansUnifiedPage() {
   const {
     data: menuPoolData,
     isLoading: isLoadingMenus,
-  } = useGetMenuPool(canAccessNutrition ? professionalId : undefined);
+    isError: isNutritionMenusError,
+    error: nutritionMenusError,
+  } = useGetMenuPoolSummary(canAccessNutrition ? professionalId : undefined);
 
-  const menus = useMemo<IMenuPool[]>(
-    () => (Array.isArray(menuPoolData) ? (menuPoolData as IMenuPool[]) : []),
+  const menus = useMemo<IMenuPoolSummary[]>(
+    () => (Array.isArray(menuPoolData) ? (menuPoolData as IMenuPoolSummary[]) : []),
     [menuPoolData],
   );
 
@@ -166,7 +177,7 @@ export function ClientPlansUnifiedPage() {
   }, [canAccessTraining, macrocycles]);
 
   const nutritionByClient = useMemo(() => {
-    const groups = new Map<string, IMenuPool[]>();
+    const groups = new Map<string, IMenuPoolSummary[]>();
     if (!canAccessNutrition) {
       return groups;
     }
@@ -255,6 +266,8 @@ export function ClientPlansUnifiedPage() {
     (canAccessTraining && isLoadingMacrocycles) ||
     (canAccessNutrition && isLoadingMenus);
   const isLoadingPage = isLoadingClients || isLoadingPlans;
+  const showNutritionErrorBanner = canAccessNutrition && isNutritionMenusError;
+  const showEmptyState = filteredGroups.length === 0 && !showNutritionErrorBanner;
 
   return (
     <div className="space-y-6">
@@ -284,13 +297,27 @@ export function ClientPlansUnifiedPage() {
         </div>
       </div>
 
+      {showNutritionErrorBanner ? (
+        <Card>
+          <div className="flex items-start gap-3 rounded-xl border border-amber-100 bg-amber-50/70 p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <ExclamationTriangleIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-semibold text-amber-900">No pudimos cargar los menus de nutricion</p>
+              <p className="mt-1 text-sm text-amber-800">{getErrorMessage(nutritionMenusError)}</p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
       {isLoadingPage ? (
         <Card>
           <div className="flex min-h-[12rem] items-center justify-center">
             <LoadingSpinner size="lg" />
           </div>
         </Card>
-      ) : filteredGroups.length === 0 ? (
+      ) : showEmptyState ? (
         <Card>
           <div className="py-16 text-center">
             <ClipboardDocumentListIcon className="mx-auto h-12 w-12 text-blue-300" />

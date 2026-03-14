@@ -1,6 +1,20 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getMenus, getMenuById, createMenu, updateMenu, deleteMenu, getMenuPool, swapDailyMenu, getMenuPoolCalendar, generateMenuAI, saveMenuDraft, updateMenuDraft, getDrafts, getDraftById } from './api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
+import {
+    createMenu,
+    deleteMenu,
+    generateMenuAI,
+    getDraftById,
+    getDrafts,
+    getMenuById,
+    getMenuPoolCalendarSummary,
+    getMenuPoolSummary,
+    getReusableMenuSummary,
+    saveMenuDraft,
+    swapDailyMenu,
+    updateMenu,
+    updateMenuDraft,
+} from './api';
 
 const resolveErrorMessage = (error: unknown, fallback: string): string => {
     if (typeof error === 'object' && error !== null) {
@@ -39,10 +53,10 @@ const resolveErrorMessage = (error: unknown, fallback: string): string => {
     return fallback;
 };
 
-export const useGetMenus = (professionalId?: number) => {
+export const useGetReusableMenuSummary = (professionalId?: number, clientId?: number) => {
     return useQuery({
-        queryKey: ['menus', professionalId],
-        queryFn: () => getMenus(professionalId),
+        queryKey: ['menus-reusable-summary', professionalId, clientId],
+        queryFn: () => getReusableMenuSummary(professionalId!, clientId),
         enabled: !!professionalId,
     });
 };
@@ -73,75 +87,84 @@ export const useGetMenuById = (id: number) => {
 
 export const useCreateMenu = () => {
     const queryClient = useQueryClient();
+
     return useMutation({
         mutationFn: createMenu,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['menus'] });
-            queryClient.invalidateQueries({ queryKey: ['menus-pool'] });
-            toast.success('Menú creado correctamente');
+            queryClient.invalidateQueries({ queryKey: ['menus-reusable-summary'] });
+            queryClient.invalidateQueries({ queryKey: ['menus-pool-summary'] });
+            queryClient.invalidateQueries({ queryKey: ['menus-pool-calendar-summary'] });
+            toast.success('Menu creado correctamente');
         },
         onError: (error) => {
-            toast.error(resolveErrorMessage(error, 'Error al crear el menú'));
+            toast.error(resolveErrorMessage(error, 'Error al crear el menu'));
         },
     });
 };
 
 export const useUpdateMenu = () => {
     const queryClient = useQueryClient();
+
     return useMutation({
         mutationFn: ({ id, data }: { id: number; data: any }) => updateMenu(id, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['menus'] });
-            queryClient.invalidateQueries({ queryKey: ['menus-pool'] });
-            toast.success('Menú actualizado correctamente');
+            queryClient.invalidateQueries({ queryKey: ['menus-reusable-summary'] });
+            queryClient.invalidateQueries({ queryKey: ['menus-pool-summary'] });
+            queryClient.invalidateQueries({ queryKey: ['menus-pool-calendar-summary'] });
+            toast.success('Menu actualizado correctamente');
         },
         onError: (error) => {
-            toast.error(resolveErrorMessage(error, 'Error al actualizar el menú'));
+            toast.error(resolveErrorMessage(error, 'Error al actualizar el menu'));
         },
     });
 };
 
 export const useDeleteMenu = () => {
     const queryClient = useQueryClient();
+
     return useMutation({
         mutationFn: deleteMenu,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['menus'] });
-            queryClient.invalidateQueries({ queryKey: ['menus-pool'] });
-            toast.success('Menú eliminado correctamente');
+            queryClient.invalidateQueries({ queryKey: ['menus-reusable-summary'] });
+            queryClient.invalidateQueries({ queryKey: ['menus-pool-summary'] });
+            queryClient.invalidateQueries({ queryKey: ['menus-pool-calendar-summary'] });
+            toast.success('Menu eliminado correctamente');
         },
         onError: (error) => {
-            toast.error(resolveErrorMessage(error, 'Error al eliminar el menú'));
+            toast.error(resolveErrorMessage(error, 'Error al eliminar el menu'));
         },
     });
 };
 
 export const useSwapDailyMenu = () => {
     const queryClient = useQueryClient();
-    
+
     return useMutation({
         mutationFn: swapDailyMenu,
         onSuccess: async () => {
-             await queryClient.invalidateQueries({ queryKey: ['menus-pool'] });
-             await queryClient.invalidateQueries({ queryKey: ['menus-pool-calendar'] });
-             await queryClient.invalidateQueries({ queryKey: ['menus'] });
+            await queryClient.invalidateQueries({ queryKey: ['menus'] });
+            await queryClient.invalidateQueries({ queryKey: ['menus-pool-summary'] });
+            await queryClient.invalidateQueries({ queryKey: ['menus-pool-calendar-summary'] });
         },
     });
 };
 
-export const useGetMenuPool = (professionalId?: number, clientId?: number, date?: string) => {
+export const useGetMenuPoolSummary = (professionalId?: number, clientId?: number, date?: string) => {
     return useQuery({
-        queryKey: ['menus-pool', professionalId, clientId, date],
-        queryFn: () => getMenuPool(professionalId!, clientId, date),
+        queryKey: ['menus-pool-summary', professionalId, clientId, date],
+        queryFn: () => getMenuPoolSummary(professionalId!, clientId, date),
         enabled: !!professionalId,
-        staleTime: 1000 * 60 * 5, // 5 minutes
+        staleTime: 1000 * 60 * 5,
     });
 };
 
-export const useGetMenuPoolCalendar = (professionalId?: number, clientId?: number, date?: string) => {
+export const useGetMenuPoolCalendarSummary = (professionalId?: number, clientId?: number, date?: string) => {
     return useQuery({
-        queryKey: ['menus-pool-calendar', professionalId, clientId, date],
-        queryFn: () => getMenuPoolCalendar(professionalId!, clientId, date),
+        queryKey: ['menus-pool-calendar-summary', professionalId, clientId, date],
+        queryFn: () => getMenuPoolCalendarSummary(professionalId!, clientId, date),
         enabled: !!professionalId,
     });
 };
@@ -150,10 +173,10 @@ export const useGenerateMenuAI = () => {
     return useMutation({
         mutationFn: generateMenuAI,
         onSuccess: () => {
-            toast.success('Solicitud enviada para generar menú con IA');
+            toast.success('Solicitud enviada para generar menu con IA');
         },
         onError: (error) => {
-            toast.error(resolveErrorMessage(error, 'Error al solicitar generación con IA'));
+            toast.error(resolveErrorMessage(error, 'Error al solicitar generacion con IA'));
         },
     });
 };

@@ -47,21 +47,39 @@ export interface IMenuItem {
     equivalent_quantity: number;
 }
 
-export interface IMenuPoolMeal extends IMenuMeal {
-    total_calories: number;
-    total_glycemic_load: number;
-    total_micronutrients: Array<{
-        id: number;
-        name: string;
-        unit: string;
-        category: string;
-        amount: number;
-    }>;
+export interface IMenuSummaryGroupPreview {
+    id: number;
+    name: string;
+    color_code: string | null;
+    equivalents: number;
 }
 
-export interface IMenuPool extends Omit<IMenu, 'menu_meals'> {
-    menu_meals: IMenuPoolMeal[];
+export interface IMenuSummary {
+    id: number;
+    client_id: number | null;
+    created_by: number | null;
+    is_reusable: boolean;
+    title: string;
+    description_: string;
+    created_at: string;
+    start_date?: string | null;
+    end_date?: string | null;
+    assigned_date?: string | null;
+    assignment_start_date?: string | null;
+    assignment_end_date?: string | null;
+    menu_id_selected_client?: number | null;
+    meal_count: number;
+    meal_names: string[];
+    total_calories: number;
+    total_equivalents: number;
+    groups_preview: IMenuSummaryGroupPreview[];
 }
+
+export interface IReusableMenuSummary extends IMenuSummary {}
+
+export interface IMenuPoolSummary extends IMenuSummary {}
+
+export interface IMenuCalendarSummary extends IMenuSummary {}
 
 export interface SaveMenuDraftDto {
     professional_id: number;
