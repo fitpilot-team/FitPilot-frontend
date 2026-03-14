@@ -256,16 +256,6 @@ export function ClientPlansUnifiedPage() {
     (canAccessNutrition && isLoadingMenus);
   const isLoadingPage = isLoadingClients || isLoadingPlans;
 
-  if (isLoadingPage) {
-    return (
-      <Card>
-        <div className="flex min-h-[16rem] items-center justify-center">
-          <LoadingSpinner size="lg" />
-        </div>
-      </Card>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -294,7 +284,13 @@ export function ClientPlansUnifiedPage() {
         </div>
       </div>
 
-      {filteredGroups.length === 0 ? (
+      {isLoadingPage ? (
+        <Card>
+          <div className="flex min-h-[12rem] items-center justify-center">
+            <LoadingSpinner size="lg" />
+          </div>
+        </Card>
+      ) : filteredGroups.length === 0 ? (
         <Card>
           <div className="py-16 text-center">
             <ClipboardDocumentListIcon className="mx-auto h-12 w-12 text-blue-300" />

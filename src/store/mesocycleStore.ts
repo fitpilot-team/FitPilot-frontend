@@ -10,6 +10,7 @@ import type {
 } from '../types';
 import {
   mesocyclesService,
+  MacrocycleActivationResponse,
   MacrocycleCreateData,
   MacrocycleUpdateData,
   MesocycleCreateData,
@@ -23,6 +24,9 @@ import {
 } from '../services/mesocycles';
 import { exercisesService } from '../services/exercises';
 
+/** How long macrocycles data is considered fresh (ms). */
+const MACROCYCLES_STALE_TIME_MS = 5 * 60 * 1000; // 5 minutes
+
 interface MesocycleState {
   // Data - 5 level hierarchy
   macrocycles: Macrocycle[];
@@ -32,6 +36,9 @@ interface MesocycleState {
   trainingDays: Record<string, TrainingDay[]>; // keyed by microcycle_id
   dayExercises: Record<string, DayExercise[]>; // keyed by training_day_id
   exercises: Exercise[];
+
+  // Cache timestamp
+  _macrocyclesLoadedAt: number | null;
 
   // Loading states
   isLoadingMacrocycles: boolean;
@@ -46,6 +53,7 @@ interface MesocycleState {
   loadMacrocycle: (id: string) => Promise<void>;
   createMacrocycle: (data: MacrocycleCreateData) => Promise<Macrocycle>;
   updateMacrocycle: (id: string, data: MacrocycleUpdateData) => Promise<void>;
+  activateMacrocycle: (id: string) => Promise<MacrocycleActivationResponse>;
   deleteMacrocycle: (id: string) => Promise<void>;
   setCurrentMacrocycle: (macrocycle: Macrocycle | null) => void;
 
@@ -89,6 +97,7 @@ export const useMesocycleStore = create<MesocycleState>()(
       trainingDays: {},
       dayExercises: {},
       exercises: [],
+      _macrocyclesLoadedAt: null,
       isLoadingMacrocycles: false,
       isLoadingMacrocycle: false,
       isLoadingExercises: false,
@@ -96,11 +105,21 @@ export const useMesocycleStore = create<MesocycleState>()(
 
       // =============== Macrocycles ===============
       loadMacrocycles: async () => {
+        // Skip fetch if data is still fresh
+        const state = useMesocycleStore.getState();
+        if (
+          state.macrocycles.length > 0 &&
+          state._macrocyclesLoadedAt !== null &&
+          Date.now() - state._macrocyclesLoadedAt < MACROCYCLES_STALE_TIME_MS
+        ) {
+          return;
+        }
+
         set({ isLoadingMacrocycles: true, error: null });
         try {
           const response = await mesocyclesService.getAllMacrocycles();
           const macrocycles = Array.isArray(response) ? response : [];
-          set({ macrocycles, isLoadingMacrocycles: false });
+          set({ macrocycles, isLoadingMacrocycles: false, _macrocyclesLoadedAt: Date.now() });
         } catch (error: any) {
           set({ error: error.message, isLoadingMacrocycles: false, macrocycles: [] });
         }
@@ -172,6 +191,35 @@ export const useMesocycleStore = create<MesocycleState>()(
             macrocycles: state.macrocycles.map((m) => (m.id === id ? updated : m)),
             currentMacrocycle: state.currentMacrocycle?.id === id ? updated : state.currentMacrocycle,
           }));
+        } catch (error: any) {
+          set({ error: error.message });
+          throw error;
+        }
+      },
+
+      activateMacrocycle: async (id: string) => {
+        set({ error: null });
+        try {
+          const response = await mesocyclesService.activateMacrocycle(id);
+          const updated = response.macrocycle;
+
+          set((state) => ({
+            macrocycles: state.macrocycles.map((m) => {
+              if (m.id === id) {
+                return updated;
+              }
+              if (response.archived_macrocycle_ids.includes(m.id)) {
+                return { ...m, status: 'archived' };
+              }
+              if (response.completed_macrocycle_ids.includes(m.id)) {
+                return { ...m, status: 'completed' };
+              }
+              return m;
+            }),
+            currentMacrocycle: state.currentMacrocycle?.id === id ? updated : state.currentMacrocycle,
+          }));
+
+          return response;
         } catch (error: any) {
           set({ error: error.message });
           throw error;

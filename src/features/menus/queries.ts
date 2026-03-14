@@ -43,7 +43,7 @@ export const useGetMenus = (professionalId?: number) => {
     return useQuery({
         queryKey: ['menus', professionalId],
         queryFn: () => getMenus(professionalId),
-        enabled: !!professionalId, // Only fetch if professionalId is available (if strictly required, otherwise remove enabled)
+        enabled: !!professionalId,
     });
 };
 
@@ -62,8 +62,6 @@ export const useGetDraftById = (id?: string | null) => {
         enabled: !!id,
     });
 };
-
-
 
 export const useGetMenuById = (id: number) => {
     return useQuery({
@@ -136,6 +134,7 @@ export const useGetMenuPool = (professionalId?: number, clientId?: number, date?
         queryKey: ['menus-pool', professionalId, clientId, date],
         queryFn: () => getMenuPool(professionalId!, clientId, date),
         enabled: !!professionalId,
+        staleTime: 1000 * 60 * 5, // 5 minutes
     });
 };
 
