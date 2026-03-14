@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useGetExchangeGroups } from '@/features/exchange-groups/queries';
 import { useProfessionalClients } from '@/features/professional-clients/queries';
 import { useProfessional } from '@/contexts/ProfessionalContext';
-import { useGetFoodsByExchangeGroup } from '@/features/foods/queries';
+import { useGetFoods, useGetFoodsByExchangeGroup } from '@/features/foods/queries';
 import { getFoodsByExchangeGroup } from '@/features/foods/api';
 import { getRecipeById } from '@/features/recipes/api';
 import { useRecipeCatalog } from '@/features/recipes/queries';
@@ -27,10 +27,12 @@ import {
     buildSelectedFoodsFromItems,
     normalizeMealDraftsWithAllGroups,
 } from '@/features/menus/draftHydration';
+import { insertFoodIntoMeal } from '@/features/menus/menuBuilderSearch';
 import { Menu } from '@headlessui/react';
 import { toast } from 'react-hot-toast';
 import { Modal } from '@/components/common/Modal';
 import { AssignMenuModal } from './components/AssignMenuModal';
+import { GlobalFoodSearchModal } from './components/GlobalFoodSearchModal';
 import {
     ChevronLeft,
     Save,
@@ -73,6 +75,9 @@ import { CSS } from '@dnd-kit/utilities';
 import { differenceInCalendarDays } from 'date-fns';
 import { DatePicker } from '@/components/common/DatePicker';
 import { ClientHistoryPanel } from '@/components/ClientHistoryPanel';
+import { RecipeImage } from '@/components/recipes/RecipeImage';
+import { matchesAnyNormalizedQuery, matchesNormalizedQuery } from '@/utils/search';
+import { resolveRecipeImageUrl } from '@/utils/recipeImages';
 
 const AI_MODELS = [
     { value: 'groq//llama-3.3-70b-versatile', label: 'Groq - Llama 3.3 70B' },
@@ -99,6 +104,7 @@ const toRecipeIngredientFoodItem = (food: FoodSearchResult): IFoodItem => {
         brand: food.brand,
         category_id: 0,
         exchange_group_id: exchangeGroupId,
+        exchange_subgroup_id: null,
         image_url: undefined,
         is_recipe: false,
         base_serving_size: baseServingSize,
@@ -122,6 +128,7 @@ const toRecipeIngredientFoodItem = (food: FoodSearchResult): IFoodItem => {
             id: exchangeGroupId,
             name: '',
         },
+        exchange_subgroups: null,
         food_nutrition_values: [
             {
                 id: -food.id,
@@ -166,9 +173,16 @@ export function MenuCreationPage() {
     const draftIdParam = searchParams.get('draftId');
 
     const { professional } = useProfessional();
+    const professionalId = professional?.sub ? Number(professional.sub) : undefined;
     const { data: sourceMenu, isLoading: menuLoading } = useGetMenuById(fromMenuId);
     const { data: exchangeGroups } = useGetExchangeGroups();
     const { data: clients, isLoading: clientsLoading } = useProfessionalClients(professional?.sub || '');
+    const [isGlobalFoodSearchOpen, setIsGlobalFoodSearchOpen] = useState(false);
+    const [globalFoodSearchMealId, setGlobalFoodSearchMealId] = useState<number | null>(null);
+    const { data: allFoods, isLoading: isAllFoodsLoading } = useGetFoods(
+        professionalId,
+        isGlobalFoodSearchOpen,
+    );
 
     const [isLoadingDraft, setIsLoadingDraft] = useState(false);
 
@@ -366,8 +380,7 @@ export function MenuCreationPage() {
         return clientQuery === ''
             ? clients
             : clients.filter((c) =>
-                (c.name || '').toLowerCase().replace(/\s+/g, '').includes(clientQuery.toLowerCase().replace(/\s+/g, '')) ||
-                (c.email || '').toLowerCase().includes(clientQuery.toLowerCase())
+                matchesAnyNormalizedQuery([c.name, c.email], clientQuery, { ignoreSpaces: true })
             );
     }, [clientQuery, clients]);
 
@@ -699,6 +712,50 @@ export function MenuCreationPage() {
         }
     };
 
+    const closeGlobalFoodSearch = () => {
+        setIsGlobalFoodSearchOpen(false);
+        setGlobalFoodSearchMealId(null);
+    };
+
+    const handleOpenGlobalFoodSearch = (mealId: number) => {
+        setGlobalFoodSearchMealId(mealId);
+        setIsGlobalFoodSearchOpen(true);
+    };
+
+    const handleInsertGlobalFood = (food: IFoodItem) => {
+        if (!globalFoodSearchMealId) {
+            toast.error('Selecciona un tiempo de comida antes de agregar alimentos.');
+            return;
+        }
+
+        const result = insertFoodIntoMeal({
+            meals: localMeals,
+            selectedFoods,
+            mealId: globalFoodSearchMealId,
+            food,
+            createExchangeId: () => -Math.floor(Math.random() * 1000000000) - 1,
+        });
+
+        if (result.status === 'duplicate') {
+            toast.error('Ese alimento ya fue agregado en este tiempo de comida.');
+            return;
+        }
+
+        if (result.status === 'missing_exchange_group') {
+            toast.error('El alimento no tiene grupo de intercambio y no puede agregarse al menú.');
+            return;
+        }
+
+        if (result.status === 'missing_meal') {
+            toast.error('No se encontró el tiempo de comida activo.');
+            return;
+        }
+
+        setLocalMeals(result.meals);
+        setSelectedFoods(result.selectedFoods);
+        toast.success('Alimento agregado al tiempo de comida.');
+    };
+
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -857,8 +914,8 @@ export function MenuCreationPage() {
             
             await Promise.all(Array.from(groupIds).map(async (groupId) => {
                 const foods = await queryClient.fetchQuery({
-                    queryKey: ["foods", "exchange-group", groupId],
-                    queryFn: () => getFoodsByExchangeGroup(groupId)
+                    queryKey: ["foods", "exchange-group", groupId, professionalId],
+                    queryFn: () => getFoodsByExchangeGroup(groupId, professionalId)
                 });
                 foods.forEach(f => {
                     foodsMap[f.id] = f;
@@ -1329,6 +1386,14 @@ export function MenuCreationPage() {
                                                 </div>
 
                                                 <div className="flex items-center gap-4">
+                                                    <button
+                                                        onClick={() => meal.id && handleOpenGlobalFoodSearch(meal.id)}
+                                                        className="px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors uppercase tracking-wide flex items-center gap-2"
+                                                    >
+                                                        <Search className="w-3.5 h-3.5" />
+                                                        Buscar alimento
+                                                    </button>
+
                                                     {/* Disassemble Recipe Button */}
                                                     {meal.meal_plan_exchanges?.some(ex => {
                                                         const key = `${meal.id}-${ex.id}`;
@@ -1392,8 +1457,8 @@ onSelect={async (recipeId) => {
                                                             if (exchangeGroupId) {
                                                                 try {
                                                                     const groupFoods = await queryClient.fetchQuery({
-                                                                        queryKey: ['foods', 'exchange-group', exchangeGroupId],
-                                                                        queryFn: () => getFoodsByExchangeGroup(exchangeGroupId),
+                                                                        queryKey: ['foods', 'exchange-group', exchangeGroupId, professionalId],
+                                                                        queryFn: () => getFoodsByExchangeGroup(exchangeGroupId, professionalId),
                                                                         staleTime: 1000 * 60 * 5
                                                                     });
                                                                     fullFood = groupFoods.find(f => f.id === partialFood.id) || fullFood;
@@ -1469,7 +1534,7 @@ onSelect={async (recipeId) => {
                                                                 _foodRef: fullFood,
                                                                 recipeId: selectedRecipe.id,
                                                                 recipeName: selectedRecipe.name,
-                                                                recipeImageUrl: selectedRecipe.image_url,
+                                                                recipeImageUrl: resolveRecipeImageUrl(selectedRecipe.image_url),
                                                                 isFromRecipe: true
                                                             };
                                                         });
@@ -1589,6 +1654,7 @@ onSelect={async (recipeId) => {
                                                                 <div className="flex-1 w-full">
                                                                     <FoodSelector
                                                                         groupId={ex.exchange_group_id}
+                                                                        professionalId={professionalId}
                                                                         value={currentSelections[idx]?.foodId}
                                                                         excludeIds={currentSelections.map((s, sIdx) => sIdx !== idx ? s.foodId : null).filter(Boolean) as number[]}
                                                                         autoOpen={currentSelections[idx]?.shouldAutoOpen}
@@ -1775,6 +1841,15 @@ onSelect={async (recipeId) => {
 
 
 
+
+                <GlobalFoodSearchModal
+                    isOpen={isGlobalFoodSearchOpen}
+                    onClose={closeGlobalFoodSearch}
+                    onSelect={handleInsertGlobalFood}
+                    foods={allFoods}
+                    exchangeGroups={exchangeGroups}
+                    isLoading={isAllFoodsLoading}
+                />
 
                 {/* Save Reusable Menu Modal */}
                 <Modal
@@ -1970,18 +2045,20 @@ onSelect={async (recipeId) => {
 
 function FoodSelector({
     groupId,
+    professionalId,
     value,
     onChange,
     excludeIds = [],
     autoOpen
 }: {
     groupId: number;
+    professionalId?: number;
     value?: number;
     onChange: (food: IFoodItem) => void;
     excludeIds?: number[];
     autoOpen?: boolean;
 }) {
-    const { data: foods, isLoading } = useGetFoodsByExchangeGroup(groupId);
+    const { data: foods, isLoading } = useGetFoodsByExchangeGroup(groupId, professionalId);
     const [isOpen, setIsOpen] = useState(autoOpen || false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -1991,7 +2068,7 @@ function FoodSelector({
         if (excludeIds.length > 0) {
             list = list.filter(f => !excludeIds.includes(f.id));
         }
-        return list.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
+        return list.filter(f => matchesNormalizedQuery(f.name, searchQuery));
     }, [foods, searchQuery, excludeIds]);
 
     const selectedFood = useMemo(() => (foods || []).find(f => f.id === value), [foods, value]);
@@ -2215,7 +2292,7 @@ function RecipeSelector({
     const [selectedIndex, setSelectedIndex] = useState(0);
 
     const filteredRecipes = useMemo(() => {
-        return recipes?.filter(r => r.name.toLowerCase().includes(query.toLowerCase())) || [];
+        return recipes?.filter(r => matchesNormalizedQuery(r.name, query)) || [];
     }, [recipes, query]);
 
     // Reset selection when query or visibility changes
@@ -2324,21 +2401,20 @@ function RecipeSelector({
                                         `}
                                     >
                                         <div className="aspect-4/3 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center mb-4 relative overflow-hidden">
-                                            {recipe.image_url ? (
-                                                <img
-                                                    src={recipe.image_url}
-                                                    alt={recipe.name}
-                                                    className="h-full w-full object-cover"
-                                                />
-                                            ) : (
-                                                <>
-                                                    <div className="absolute inset-0 opacity-10" style={{
-                                                        backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)',
-                                                        backgroundSize: '16px 16px'
-                                                    }} />
-                                                    <ChefHat className={`w-12 h-12 ${idx === selectedIndex ? 'text-emerald-600' : 'text-emerald-300'} transition-colors duration-300`} />
-                                                </>
-                                            )}
+                                            <RecipeImage
+                                                src={recipe.image_url}
+                                                alt={recipe.name}
+                                                imageClassName="h-full w-full object-cover"
+                                                fallback={
+                                                    <>
+                                                        <div className="absolute inset-0 opacity-10" style={{
+                                                            backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)',
+                                                            backgroundSize: '16px 16px'
+                                                        }} />
+                                                        <ChefHat className={`w-12 h-12 ${idx === selectedIndex ? 'text-emerald-600' : 'text-emerald-300'} transition-colors duration-300`} />
+                                                    </>
+                                                }
+                                            />
                                         </div>
 
                                         <div className="px-2 pb-2">

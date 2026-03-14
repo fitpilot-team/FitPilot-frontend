@@ -20,6 +20,7 @@ import type {
     RecipeNutritionSummary,
     RecipeUpsertInput,
 } from '@/features/recipes/types';
+import { resolveRecipeImageUrl } from '@/utils/recipeImages';
 
 type DraftIngredient = {
     clientId: string;
@@ -182,7 +183,7 @@ export function NutritionRecipeEditorPage() {
                 .map((ingredient) => buildDraftIngredient(ingredient))
                 .filter((ingredient): ingredient is DraftIngredient => Boolean(ingredient)),
         );
-        setImagePreviewUrl(recipe.image_url ?? null);
+        setImagePreviewUrl(resolveRecipeImageUrl(recipe.image_url));
         setPendingImageBlob(null);
         setRemoveImageRequested(false);
         setHydratedRecipeId(recipe.id);
