@@ -19,11 +19,14 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { format, startOfWeek, addDays, parseISO, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ArrowLeft, Calendar, Flame, ChevronRight, GripVertical, AlertCircle } from 'lucide-react';
-import { useGetMenuPool, useSwapDailyMenu, useGetMenuPoolCalendar } from '@/features/menus/queries';
+import { ArrowLeft, Calendar, Flame, ChevronRight, GripVertical, AlertCircle, Printer } from 'lucide-react';
+import { useGetMenuPoolCalendarSummary, useGetMenuPoolSummary, useSwapDailyMenu } from '@/features/menus/queries';
+import { getClientDailyMenuBatch } from '@/features/menus/api';
+import { buildDietPdfDocumentFromDailyBatch } from '@/features/menus/pdf';
 import { useProfessionalClients } from '@/features/professional-clients/queries';
 import { useProfessional } from '@/contexts/ProfessionalContext';
-import { IMenuPool } from '@/features/menus/types';
+import { IMenuPoolSummary } from '@/features/menus/types';
+import { generateDietPdf } from '@/utils/dietPdfGenerator';
 import toast from 'react-hot-toast';
 import { DatePicker } from '@/components/common/DatePicker';
 
@@ -31,13 +34,13 @@ import { DatePicker } from '@/components/common/DatePicker';
 type DayColumn = {
     date: Date;
     dayName: string;
-    menus: IMenuPool[];
+    menus: IMenuPoolSummary[];
 };
 
 // --- Components ---
 
 // Draggable Menu Card
-const MenuCard = ({ menu, isOverlay = false }: { menu: IMenuPool, isOverlay?: boolean }) => {
+const MenuCard = ({ menu, isOverlay = false }: { menu: IMenuPoolSummary, isOverlay?: boolean }) => {
     const {
         attributes,
         listeners,
@@ -97,7 +100,7 @@ const MenuCard = ({ menu, isOverlay = false }: { menu: IMenuPool, isOverlay?: bo
                 <div className="bg-orange-50 px-2 py-1 rounded-lg border border-orange-100 flex items-center gap-1">
                     <Flame className="w-3 h-3 text-orange-400" />
                     <span className="text-[10px] font-bold text-orange-700">
-                        {menu.menu_meals?.reduce((acc, m) => acc + (m.total_calories || 0), 0).toFixed(0)} kcal
+                        {menu.total_calories.toFixed(0)} kcal
                     </span>
                 </div>
             </div>
@@ -108,7 +111,7 @@ const MenuCard = ({ menu, isOverlay = false }: { menu: IMenuPool, isOverlay?: bo
 
             <div className="flex items-center justify-between pt-3 border-t border-gray-50">
                 <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
-                    {menu.menu_meals?.length} Comidas
+                    {menu.meal_count} Comidas
                 </span>
                 <ChevronRight className="w-3 h-3 text-gray-300" />
             </div>
@@ -179,7 +182,7 @@ const DayColumn = ({ day, isToday }: { day: DayColumn, isToday: boolean }) => {
 
 
 // Draggable Sidebar Menu Item
-const SidebarPoolMenu = ({ menu }: { menu: IMenuPool }) => {
+const SidebarPoolMenu = ({ menu }: { menu: IMenuPoolSummary }) => {
     const {
         attributes,
         listeners,
@@ -210,7 +213,7 @@ const SidebarPoolMenu = ({ menu }: { menu: IMenuPool }) => {
             <h4 className="font-bold text-gray-800 text-xs mb-1 line-clamp-2">{menu.title}</h4>
             <div className="flex items-center gap-2">
                  <span className="text-[10px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded font-bold border border-orange-100">
-                    {menu.menu_meals?.reduce((acc, m) => acc + (m.total_calories || 0), 0).toFixed(0)} kcal
+                    {menu.total_calories.toFixed(0)} kcal
                  </span>
             </div>
         </div>
@@ -270,14 +273,27 @@ export function ClientWeeklyMenuView() {
     const { clientId } = useParams();
     const navigate = useNavigate();
     const { professional } = useProfessional();
-    const { data: poolMenusRaw, isLoading: isLoadingPool } = useGetMenuPool(professional?.sub ? Number(professional.sub) : undefined);
-    const { data: calendarMenusRaw, isLoading: isLoadingCalendar } = useGetMenuPoolCalendar(professional?.sub ? Number(professional.sub) : undefined, Number(clientId));
+    const professionalId = professional?.sub ? Number(professional.sub) : undefined;
+    const numericClientId = clientId ? Number(clientId) : undefined;
+    const {
+        data: poolMenusRaw = [],
+        isLoading: isLoadingPool,
+        isError: isPoolError,
+        error: poolError,
+    } = useGetMenuPoolSummary(professionalId, numericClientId);
+    const {
+        data: calendarMenusRaw = [],
+        isLoading: isLoadingCalendar,
+        isError: isCalendarError,
+        error: calendarError,
+    } = useGetMenuPoolCalendarSummary(professionalId, numericClientId);
     const { data: clients, isLoading: isLoadingClients } = useProfessionalClients(professional?.sub ? Number(professional.sub) : '');
     const swapMenuMutation = useSwapDailyMenu();
     
     // State
     const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
     const [activeId, setActiveId] = useState<string | number | null>(null);
+    const [isPrintingPdf, setIsPrintingPdf] = useState(false);
 
     // Get current client
     const client = useMemo(() => 
@@ -285,19 +301,17 @@ export function ClientWeeklyMenuView() {
     [clients, clientId]);
 
     const clientMenus = useMemo(() => {
-        if (!calendarMenusRaw || !clientId) return [];
-        return (calendarMenusRaw as IMenuPool[]).filter(m => m.client_id === Number(clientId));
-    }, [calendarMenusRaw, clientId]);
+        return calendarMenusRaw as IMenuPoolSummary[];
+    }, [calendarMenusRaw]);
 
     const sidebarMenus = useMemo(() => {
-        if (!poolMenusRaw || !clientId) return [];
-        return (poolMenusRaw as IMenuPool[]).filter(m => m.client_id === Number(clientId));
-    }, [poolMenusRaw, clientId]);
+        return poolMenusRaw as IMenuPoolSummary[];
+    }, [poolMenusRaw]);
 
     // Unique menus for the pool sidebar (deduplicated by ID to show available options)
     const uniquePoolMenus = useMemo(() => {
-        const unique = new Map();
-        sidebarMenus.forEach((m: IMenuPool) => {
+        const unique = new Map<number, IMenuPoolSummary>();
+        sidebarMenus.forEach((m) => {
             if (!unique.has(m.id)) {
                 unique.set(m.id, m);
             }
@@ -341,7 +355,7 @@ export function ClientWeeklyMenuView() {
 
         if (!over) return;
 
-        const draggedMenu = active.data.current?.menu as IMenuPool;
+        const draggedMenu = active.data.current?.menu as IMenuPoolSummary;
         if (!draggedMenu) return;
 
         // Resolve the target date
@@ -351,7 +365,7 @@ export function ClientWeeklyMenuView() {
         if (overData?.type === 'column') {
             targetDate = overData.date;
         } else if (overData?.type === 'menu') {
-            const overMenu = overData.menu as IMenuPool;
+            const overMenu = overData.menu as IMenuPoolSummary;
             if (overMenu.assigned_date) {
                 const dateStr = overMenu.assigned_date.split('T')[0];
                 targetDate = parseISO(dateStr);
@@ -393,9 +407,29 @@ export function ClientWeeklyMenuView() {
          return <WeeklyViewSkeleton />;
     }
 
+    if (isPoolError || isCalendarError) {
+        const errorMessage = poolError instanceof Error
+            ? poolError.message
+            : calendarError instanceof Error
+                ? calendarError.message
+                : 'No se pudo cargar la planificacion semanal.';
+
+        return (
+            <div className="h-[calc(100vh-6rem)] flex items-center justify-center -m-6 p-6">
+                <div className="max-w-lg w-full bg-white rounded-3xl border border-red-100 shadow-sm p-8 text-center">
+                    <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-red-50 flex items-center justify-center">
+                        <AlertCircle className="w-8 h-8 text-red-400" />
+                    </div>
+                    <h2 className="text-xl font-black text-gray-900 mb-2">No pudimos cargar los menus</h2>
+                    <p className="text-sm text-gray-500">{errorMessage}</p>
+                </div>
+            </div>
+        );
+    }
+
     const activeMenu = activeId ? (
         typeof activeId === 'string' && activeId.startsWith('pool-') 
-            ? uniquePoolMenus.find((m: IMenuPool) => `pool-${m.id}` === activeId)
+            ? uniquePoolMenus.find((m) => `pool-${m.id}` === activeId)
             : clientMenus.find(m => (m.menu_id_selected_client || m.id) === activeId)
     ) : null;
 
@@ -403,6 +437,33 @@ export function ClientWeeklyMenuView() {
         if (!dateStr) return;
         const date = parseISO(dateStr);
         setCurrentWeekStart(startOfWeek(date, { weekStartsOn: 1 }));
+    };
+
+    const handlePrintPdf = async () => {
+        if (!numericClientId) {
+            toast.error('No se pudo resolver el cliente para imprimir el PDF');
+            return;
+        }
+
+        setIsPrintingPdf(true);
+        try {
+            const startDate = format(currentWeekStart, 'yyyy-MM-dd');
+            const dailyMenus = await getClientDailyMenuBatch(numericClientId, startDate, 7);
+            const documentData = buildDietPdfDocumentFromDailyBatch({
+                dailyMenus,
+                startDate,
+                days: 7,
+                clientName: client ? `${client.name ?? ''} ${client.lastname ?? ''}`.trim() || null : null,
+            });
+
+            await generateDietPdf(documentData);
+            toast.success('PDF semanal generado');
+        } catch (error) {
+            console.error('Failed to generate weekly diet PDF:', error);
+            toast.error('Error al generar el PDF semanal');
+        } finally {
+            setIsPrintingPdf(false);
+        }
     };
 
 
@@ -429,6 +490,15 @@ export function ClientWeeklyMenuView() {
                 </div>
 
                 <div className="flex items-center gap-4">
+                     <button
+                        onClick={handlePrintPdf}
+                        disabled={isPrintingPdf || swapMenuMutation.isPending || !numericClientId}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <Printer className="w-4 h-4" />
+                        {isPrintingPdf ? 'Generando PDF...' : 'Imprimir PDF'}
+                    </button>
+
                      {/* Date Picker for Quick Navigation */}
                      <div className="w-40">
                         <DatePicker 

@@ -1,9 +1,9 @@
 
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronRight, User, Search, Check, X } from 'lucide-react';
-import { useGetMenuPool } from '@/features/menus/queries';
-import { IMenuPool } from '@/features/menus/types';
+import { AlertCircle, ChevronRight, User, Search, Check, X } from 'lucide-react';
+import { useGetMenuPoolSummary } from '@/features/menus/queries';
+import { IMenuPoolSummary } from '@/features/menus/types';
 import { useNavigate } from 'react-router-dom';
 import { useProfessional } from '@/contexts/ProfessionalContext';
 import { useProfessionalClients } from '@/features/professional-clients/queries';
@@ -13,30 +13,24 @@ import { IProfessionalClient } from '@/features/professional-clients/types';
 export function ClientsMenusPage() {
     const navigate = useNavigate();
     const { professional } = useProfessional();
-    const { data: menus, isLoading } = useGetMenuPool(professional?.sub ? Number(professional.sub) : undefined);
+    const {
+        data: menus = [],
+        isLoading,
+        isError,
+        error,
+    } = useGetMenuPoolSummary(professional?.sub ? Number(professional.sub) : undefined);
     const { data: clients, isLoading: isLoadingClients } = useProfessionalClients(professional?.sub ? Number(professional.sub) : '');
     
     const [isClientModalOpen, setIsClientModalOpen] = useState(false);
     const [selectedClient, setSelectedClient] = useState<IProfessionalClient | null>(null);
 
-    const calculateMenuStats = (menu: IMenuPool) => {
-        if (menu.menu_meals && menu.menu_meals.length > 0) {
-            const totalCals = menu.menu_meals.reduce((acc: number, meal: any) => acc + (meal.total_calories || 0), 0);
-             return {
-                calories: Math.round(totalCals),
-                equivalents: 0
-            };
-        }
-       return { calories: 0, equivalents: 0 };
-    };
-
     // Group menus by client for the "By Client" view
     const menusGroupedByClient = useMemo(() => {
         if (!menus) return [];
         
-        const groupedMap = new Map<number, IMenuPool[]>();
+        const groupedMap = new Map<number, IMenuPoolSummary[]>();
         
-        let availableMenus = menus as IMenuPool[];
+        let availableMenus = menus as IMenuPoolSummary[];
         
         if (selectedClient) {
             availableMenus = availableMenus.filter(m => m.client_id === selectedClient.id);
@@ -55,10 +49,7 @@ export function ClientsMenusPage() {
                 client,
                 menus: clientMenus,
                 totalMenus: clientMenus.length,
-                totalCalories: clientMenus.reduce((acc, m) => {
-                    const stats = calculateMenuStats(m);
-                    return acc + stats.calories;
-                }, 0) / clientMenus.length 
+                totalCalories: clientMenus.reduce((acc, m) => acc + m.total_calories, 0) / clientMenus.length,
             };
         });
     }, [menus, clients, selectedClient]);
@@ -133,6 +124,16 @@ export function ClientsMenusPage() {
                     {Array.from({ length: 6 }).map((_, i) => (
                         <div key={i} className="bg-white rounded-4xl p-6 h-[200px] animate-pulse border border-gray-100" />
                     ))}
+                </div>
+            ) : isError ? (
+                <div className="col-span-full flex flex-col items-center justify-center py-20 bg-red-50/50 rounded-[3rem] border border-red-100">
+                    <div className="p-6 bg-white rounded-3xl shadow-sm mb-4">
+                        <AlertCircle className="w-12 h-12 text-red-300" />
+                    </div>
+                    <h3 className="text-xl font-black text-gray-900 mb-2">No pudimos cargar los menus</h3>
+                    <p className="text-gray-500 text-center max-w-md mb-8 font-medium">
+                        {error instanceof Error ? error.message : 'Ocurrio un error al cargar los menus del profesional.'}
+                    </p>
                 </div>
             ) : (
                 /* By Client Grid */

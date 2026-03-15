@@ -11,6 +11,7 @@ import {
     renderSquareCropToBlob,
     revokeDraftUrl,
 } from '@/utils/imageProcessing';
+import { resolveRecipeImageUrl } from '@/utils/recipeImages';
 
 const OUTPUT_SIZE = 512;
 const PREVIEW_SIZE = 288;
@@ -95,7 +96,7 @@ export function RecipeImageUploader({
     disabled = false,
 }: RecipeImageUploaderProps) {
     const inputRef = useRef<HTMLInputElement>(null);
-    const [displayImage, setDisplayImage] = useState<string | null>(imageUrl ?? null);
+    const [displayImage, setDisplayImage] = useState<string | null>(() => resolveRecipeImageUrl(imageUrl));
     const [draft, setDraft] = useState<ImageCropDraft | null>(null);
     const [zoom, setZoom] = useState(1.2);
     const [offsetX, setOffsetX] = useState(0);
@@ -107,7 +108,7 @@ export function RecipeImageUploader({
     const dragStartOffsets = useRef<{ x: number; y: number } | null>(null);
 
     useEffect(() => {
-        setDisplayImage(imageUrl ?? null);
+        setDisplayImage(resolveRecipeImageUrl(imageUrl));
     }, [imageUrl]);
 
     useEffect(() => {

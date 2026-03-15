@@ -6,6 +6,7 @@ import type {
   IMenuMealDraft,
   MenuBuilderFoodSelection,
 } from './types';
+import { resolveRecipeImageUrl } from '@/utils/recipeImages';
 
 type MenuItemHydrationInput = {
   exchange_group_id?: number | null;
@@ -248,7 +249,7 @@ export const buildSelectedFoodsFromItems = ({
         _foodRef: hydratedFood,
         recipeId: item.recipe_id ?? undefined,
         recipeName: item.recipe_summary?.title ?? undefined,
-        recipeImageUrl: item.recipe_summary?.image_url ?? undefined,
+        recipeImageUrl: resolveRecipeImageUrl(item.recipe_summary?.image_url) ?? undefined,
         isFromRecipe: Boolean(item.recipe_id),
       });
     }

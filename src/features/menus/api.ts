@@ -1,17 +1,48 @@
 import { nutritionApi } from "@/api/clients/nutrition.client";
-import { GenerateAiMenuDto, GenerateAiMenuResponse, IMenu, IMenuDraft } from './types';
+import {
+    GenerateAiMenuDto,
+    GenerateAiMenuResponse,
+    MenuDailyBatchResponseItem,
+    IMenu,
+    IMenuCalendarSummary,
+    IMenuDraft,
+    IMenuPoolSummary,
+    IReusableMenuSummary,
+} from './types';
 import { assertNutritionSubscriptionAccess } from '@/features/subscriptions/nutritionAccess';
 
-export const getMenus = async (professionalId?: number): Promise<IMenu[]> => {
+export const getReusableMenuSummary = async (
+    professionalId: number,
+    clientId?: number,
+): Promise<IReusableMenuSummary[]> => {
     assertNutritionSubscriptionAccess();
-    const params = professionalId ? { professional_id: professionalId } : {};
-    const { data } = await nutritionApi.get('/v1/menus', { params });
+    const params: Record<string, number> = { professional_id: professionalId };
+    if (clientId) {
+        params.client_id = clientId;
+    }
+    const { data } = await nutritionApi.get('/v1/menus/reusable/summary', { params });
     return data;
 };
 
 export const getMenuById = async (id: number): Promise<IMenu> => {
     assertNutritionSubscriptionAccess();
     const { data } = await nutritionApi.get(`/v1/menus/${id}`);
+    return data;
+};
+
+export const getClientDailyMenuBatch = async (
+    clientId: number,
+    date: string,
+    days = 7,
+): Promise<MenuDailyBatchResponseItem[]> => {
+    assertNutritionSubscriptionAccess();
+    const { data } = await nutritionApi.get<MenuDailyBatchResponseItem[]>('/v1/menus/daily/batch', {
+        params: {
+            client_id: clientId,
+            date,
+            days,
+        },
+    });
     return data;
 };
 
@@ -72,25 +103,29 @@ export const swapDailyMenu = async (payload: SwapDailyMenuPayload): Promise<void
     await nutritionApi.patch('/v1/menus/daily/swap', payload);
 };
 
-export const getMenuPool = async (professionalId: number, clientId?: number, date?: string): Promise<any[]> => {
+export const getMenuPoolSummary = async (
+    professionalId: number,
+    clientId?: number,
+    date?: string,
+): Promise<IMenuPoolSummary[]> => {
     assertNutritionSubscriptionAccess();
     const params: any = { professional_id: professionalId };
     if (clientId) params.client_id = clientId;
     if (date) params.date = date;
-    
-    // The endpoint returns an array of menus (IMenuPool)
-    const { data } = await nutritionApi.get('/v1/menus/pool', { params });
+    const { data } = await nutritionApi.get('/v1/menus/pool/summary', { params });
     return data;
 };
 
-export const getMenuPoolCalendar = async (professionalId: number, clientId?: number, date?: string): Promise<any[]> => {
+export const getMenuPoolCalendarSummary = async (
+    professionalId: number,
+    clientId?: number,
+    date?: string,
+): Promise<IMenuCalendarSummary[]> => {
     assertNutritionSubscriptionAccess();
     const params: any = { professional_id: professionalId };
     if (clientId) params.client_id = clientId;
     if (date) params.date = date;
-    
-    // The endpoint returns an array of menus (IMenuPool)
-    const { data } = await nutritionApi.get('/v1/menus/pool/calendar', { params });
+    const { data } = await nutritionApi.get('/v1/menus/pool/calendar/summary', { params });
     return data;
 };
 

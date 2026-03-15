@@ -4,6 +4,11 @@ import { JWTPayload, ProfessionalContextType, User } from '../types/api';
 import { getUserRequest } from '../api/auth/auth.api';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { initializeAuthSession } from '@/api/api.client';
+import {
+    resolveProfessionalUserSnapshot,
+    shouldFetchProfessionalUser,
+    shouldRequireSubscriptionSelection,
+} from './professionalSession';
 
 const ProfessionalContext = createContext<ProfessionalContextType | undefined>(undefined);
 
@@ -31,6 +36,7 @@ export const ProfessionalProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const { token, user: authUser, setUser, authChecked } = useAuthStore();
     const [professional, setProfessional] = useState<JWTPayload | null>(null);
     const [storedUserData, setStoredUserData] = useLocalStorage<User | null>('user_data', null);
+    const [hasResolvedSessionUser, setHasResolvedSessionUser] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -41,13 +47,16 @@ export const ProfessionalProvider: React.FC<{ children: React.ReactNode }> = ({ 
         });
     }, [authChecked]);
 
-    // Hydrate authStore from localStorage on mount
     useEffect(() => {
         if (!authChecked) return;
-        if (!authUser && storedUserData && token) {
-            setUser(storedUserData);
+
+        if (!token) {
+            setHasResolvedSessionUser(true);
+            return;
         }
-    }, [authChecked, authUser, storedUserData, token, setUser]);
+
+        setHasResolvedSessionUser(false);
+    }, [authChecked, token]);
 
     const refreshProfessional = useCallback(async (forceRefresh = false) => {
         if (!authChecked) {
@@ -58,6 +67,7 @@ export const ProfessionalProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (!token) {
             setProfessional(null);
             setStoredUserData(null);
+            setHasResolvedSessionUser(true);
             setIsLoading(false);
             return;
         }
@@ -67,33 +77,24 @@ export const ProfessionalProvider: React.FC<{ children: React.ReactNode }> = ({ 
         try {
             const decoded = decodeToken(token);
             setProfessional(decoded);
-            
-            // Avoid redundant fetch if we already have the user data in authStore or localStorage
-            // and it seems to belong to the same professional/user
-            if (!forceRefresh && authUser && authUser.id === decoded?.sub) {
-                // If it's already in the store, we don't necessarily need to fetch again immediately
-                // but we might want to sync it to localStorage if not there
-                if (!storedUserData) {
-                    setStoredUserData(authUser);
-                }
-                setIsLoading(false);
-                return;
-            }
 
-            // Fetch full user data from API to ensure we have name, lastname, etc.
-            try {
+            if (shouldFetchProfessionalUser({
+                forceRefresh,
+                authUser,
+                decodedUserId: decoded?.sub ?? null,
+                hasResolvedSessionUser,
+            })) {
                 const user = await getUserRequest();
                 setUser(user);
-                // setStoredUserData will be triggered by the sync effect
-            } catch (fetchError) {
-                console.error("Failed to fetch user details", fetchError);
             }
-        } catch (err: any) {
-            setError(err.message || 'Failed to refresh professional data');
+        } catch (error) {
+            console.error('Failed to fetch user details', error);
+            setError(error instanceof Error ? error.message : 'Failed to refresh professional data');
         } finally {
+            setHasResolvedSessionUser(true);
             setIsLoading(false);
         }
-    }, [authChecked, token, authUser, storedUserData, setUser, setStoredUserData]);
+    }, [authChecked, token, authUser, hasResolvedSessionUser, setUser, setStoredUserData]);
 
     useEffect(() => {
         if (!authChecked) {
@@ -111,15 +112,15 @@ export const ProfessionalProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
     }, [authUser, setStoredUserData]);
 
-    const activeUser = authUser || storedUserData;
-    const hasSubscriptionAccess =
-        activeUser?.has_active_subscription === true ||
-        activeUser?.subscription_vigency?.is_vigent === true;
-    const requiresSubscriptionSelection = Boolean(
-        activeUser &&
-        String(activeUser.role ?? '').toUpperCase() === 'PROFESSIONAL' &&
-        !hasSubscriptionAccess
-    );
+    const activeUser = resolveProfessionalUserSnapshot({
+        authUser,
+        storedUserData,
+        hasResolvedSessionUser,
+    });
+    const requiresSubscriptionSelection = shouldRequireSubscriptionSelection({
+        user: activeUser,
+        hasResolvedSessionUser,
+    });
 
     return (
         <ProfessionalContext.Provider

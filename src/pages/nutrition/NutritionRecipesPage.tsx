@@ -13,6 +13,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Modal } from '@/components/common/Modal';
+import { RecipeImage } from '@/components/recipes/RecipeImage';
 import { useDeleteRecipe, useDuplicateRecipe, useRecipeCatalog } from '@/features/recipes/queries';
 import {
     EMPTY_RECIPE_NUTRITION_SUMMARY,
@@ -20,6 +21,7 @@ import {
     type RecipeNutritionSummary,
     type RecipeScope,
 } from '@/features/recipes/types';
+import { matchesNormalizedQuery } from '@/utils/search';
 
 const PAGE_SIZE = 9;
 
@@ -72,15 +74,18 @@ function RecipeCard({
             className="overflow-hidden rounded-[2rem] border border-gray-100 bg-white shadow-sm transition hover:shadow-xl hover:shadow-nutrition-500/10"
         >
             <div className="relative h-48 overflow-hidden bg-white">
-                {recipe.image_url ? (
-                    <img src={recipe.image_url} alt={recipe.name} className="h-full w-full object-cover" />
-                ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/80 text-nutrition-600 shadow-sm">
-                            <ChefHat className="h-9 w-9" />
+                <RecipeImage
+                    src={recipe.image_url}
+                    alt={recipe.name}
+                    imageClassName="h-full w-full object-cover"
+                    fallback={
+                        <div className="flex h-full w-full items-center justify-center">
+                            <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/80 text-nutrition-600 shadow-sm">
+                                <ChefHat className="h-9 w-9" />
+                            </div>
                         </div>
-                    </div>
-                )}
+                    }
+                />
 
                 <div className="absolute left-4 top-4 inline-flex items-center rounded-full border border-white/70 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-700 backdrop-blur">
                     {isTemplate ? 'Plantilla' : 'Mi receta'}
@@ -181,7 +186,7 @@ export function NutritionRecipesPage() {
     const duplicateRecipeMutation = useDuplicateRecipe();
 
     const filteredRecipes = useMemo(() => {
-        const query = deferredSearch.trim().toLowerCase();
+        const query = deferredSearch.trim();
         const items = recipes ?? [];
 
         if (!query) {
@@ -189,7 +194,7 @@ export function NutritionRecipesPage() {
         }
 
         return items.filter((recipe) =>
-            `${recipe.name} ${recipe.description ?? ''}`.toLowerCase().includes(query),
+            matchesNormalizedQuery(`${recipe.name} ${recipe.description ?? ''}`, query),
         );
     }, [deferredSearch, recipes]);
 

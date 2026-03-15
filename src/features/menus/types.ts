@@ -47,21 +47,112 @@ export interface IMenuItem {
     equivalent_quantity: number;
 }
 
-export interface IMenuPoolMeal extends IMenuMeal {
-    total_calories: number;
-    total_glycemic_load: number;
-    total_micronutrients: Array<{
-        id: number;
-        name: string;
-        unit: string;
-        category: string;
-        amount: number;
-    }>;
+export interface IMenuPortionDetail {
+    household_label: string | null;
+    equivalents: number | null;
+    grams: number | null;
 }
 
-export interface IMenuPool extends Omit<IMenu, 'menu_meals'> {
-    menu_meals: IMenuPoolMeal[];
+export interface IMenuServingUnitSummary {
+    id: number;
+    unit_name: string | null;
+    gram_equivalent: number | null;
+    is_exchange_unit: boolean | null;
 }
+
+export interface IMenuFoodNutritionSummary {
+    state?: string | null;
+    calories_kcal?: number | null;
+    glycemic_load?: number | null;
+    base_serving_size?: number | null;
+    base_unit?: string | null;
+}
+
+export interface IMenuDailyFood {
+    id: number;
+    name: string;
+    base_serving_size?: number | null;
+    base_unit?: string | null;
+    serving_units?: IMenuServingUnitSummary[] | null;
+    food_nutrition_values?: IMenuFoodNutritionSummary[] | null;
+}
+
+export interface IMenuDailyItem {
+    id: number;
+    menu_meal_id: number;
+    exchange_group_id: number;
+    food_id: number;
+    serving_unit_id: number | null;
+    quantity: number;
+    recipe_id: number | null;
+    recipe_summary?: {
+        id: number;
+        title: string;
+        image_url: string | null;
+    } | null;
+    foods?: IMenuDailyFood | IFoodItem | null;
+    exchange_groups?: IExchangeGroup | null;
+    serving_units?: IMenuServingUnitSummary | null;
+    portion_detail?: IMenuPortionDetail | null;
+    equivalent_quantity: number;
+}
+
+export interface IMenuDailyMeal {
+    id: number;
+    menu_id: number;
+    name: string;
+    source_meal_plan_meal_id?: number | null;
+    total_calories?: number | null;
+    menu_items_menu_items_menu_meal_idTomenu_meals: IMenuDailyItem[];
+}
+
+export interface MenuDailyBatchResponseItem {
+    id: number;
+    client_id: number | null;
+    created_by: number | null;
+    is_reusable: boolean;
+    title: string;
+    description_: string;
+    start_date?: string | null;
+    end_date?: string | null;
+    assigned_date?: string | null;
+    menu_id_selected_client?: number | null;
+    menu_meals: IMenuDailyMeal[];
+}
+
+export interface IMenuSummaryGroupPreview {
+    id: number;
+    name: string;
+    color_code: string | null;
+    equivalents: number;
+}
+
+export interface IMenuSummary {
+    id: number;
+    client_id: number | null;
+    created_by: number | null;
+    is_reusable: boolean;
+    title: string;
+    description_: string;
+    created_at: string;
+    start_date?: string | null;
+    end_date?: string | null;
+    assigned_date?: string | null;
+    assignment_start_date?: string | null;
+    assignment_end_date?: string | null;
+    menu_id_selected_client?: number | null;
+    meal_count: number;
+    meal_names: string[];
+    total_calories: number;
+    total_equivalents: number;
+    groups_preview: IMenuSummaryGroupPreview[];
+}
+
+export interface IReusableMenuSummary extends IMenuSummary {}
+
+export interface IMenuPoolSummary extends IMenuSummary {}
+
+export interface IMenuCalendarSummary extends IMenuSummary {}
 
 export interface SaveMenuDraftDto {
     professional_id: number;
@@ -80,6 +171,63 @@ export interface IMenuDraft {
     is_ai_generated: boolean;
     status: string;
     applied_at: string | null;
+}
+
+export interface DietPdfPortion {
+    householdLabel: string | null;
+    equivalents: number | null;
+    grams: number | null;
+}
+
+export interface DietPdfIngredient {
+    id: string;
+    label: string;
+    exchangeGroupName: string | null;
+    portion: DietPdfPortion;
+}
+
+export interface DietPdfRecipe {
+    id: string;
+    recipeId: number | null;
+    title: string;
+    imageUrl: string | null;
+    ingredientCount: number;
+    ingredients: DietPdfIngredient[];
+}
+
+export interface DietPdfMeal {
+    id: string;
+    name: string;
+    totalCalories: number | null;
+    recipes: DietPdfRecipe[];
+    standaloneFoods: DietPdfIngredient[];
+}
+
+export interface DietPdfDay {
+    id: string;
+    title: string;
+    subtitle: string | null;
+    dateKey: string | null;
+    meals: DietPdfMeal[];
+}
+
+export interface DietPdfSummary {
+    totalDays: number;
+    totalMeals: number;
+    totalRecipes: number;
+    totalStandaloneFoods: number;
+    totalCalories: number | null;
+}
+
+export interface DietPdfDocument {
+    title: string;
+    subtitle: string | null;
+    clientName: string | null;
+    periodLabel: string | null;
+    printedAt: string;
+    source: 'weekly' | 'editor';
+    summary: DietPdfSummary;
+    days: DietPdfDay[];
 }
 
 
